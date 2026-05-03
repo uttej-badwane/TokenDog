@@ -27,16 +27,25 @@ func init() {
 	pipeCmd.AddCommand(pipeWebFetchCmd)
 }
 
+// webFetchResponse matches Claude Code's WebFetch tool_response object
+type webFetchResponse struct {
+	Bytes    int    `json:"bytes"`
+	Code     int    `json:"code"`
+	CodeText string `json:"codeText"`
+	Result   string `json:"result"`
+	URL      string `json:"url"`
+}
+
 type postToolUseInput struct {
-	SessionID      string         `json:"session_id"`
-	TranscriptPath string         `json:"transcript_path"`
-	ToolName       string         `json:"tool_name"`
-	ToolInput      map[string]any `json:"tool_input"`
-	ToolResponse   string         `json:"tool_response"`
+	SessionID      string          `json:"session_id"`
+	TranscriptPath string          `json:"transcript_path"`
+	ToolName       string          `json:"tool_name"`
+	ToolInput      map[string]any  `json:"tool_input"`
+	ToolResponse   json.RawMessage `json:"tool_response"`
 }
 
 type postToolUseOutput struct {
-	ToolResponse string `json:"tool_response"`
+	ToolResponse webFetchResponse `json:"tool_response"`
 }
 
 func runPipeWebFetch(_ *cobra.Command, _ []string) error {
@@ -50,19 +59,21 @@ func runPipeWebFetch(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	if input.ToolResponse == "" {
+	// Parse tool_response as the WebFetch response object
+	var resp webFetchResponse
+	if err := json.Unmarshal(input.ToolResponse, &resp); err != nil || resp.Result == "" {
 		return nil
 	}
 
 	start := time.Now()
-	raw := input.ToolResponse
+	raw := resp.Result
 	filtered := filter.WebFetch(raw)
 	elapsed := time.Since(start).Milliseconds()
 
 	_ = analytics.Save(analytics.Record{
 		Command:       "td pipe webfetch",
 		Timestamp:     time.Now(),
-		RawBytes:      len(raw),
+		RawBytes:      resp.Bytes, // report actual page size, not just result size
 		FilteredBytes: len(filtered),
 		DurationMs:    elapsed,
 	})
@@ -71,7 +82,8 @@ func runPipeWebFetch(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	out, err := json.Marshal(postToolUseOutput{ToolResponse: filtered})
+	resp.Result = filtered
+	out, err := json.Marshal(postToolUseOutput{ToolResponse: resp})
 	if err != nil {
 		return err
 	}
