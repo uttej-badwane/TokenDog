@@ -112,8 +112,11 @@ func gitLog(output string) string {
 		return strings.Join(lines, "\n") + "\n"
 	}
 
-	// Full format: convert to compact one-line-per-commit
-	type entry struct{ hash, author, date, msg string }
+	// Full format: convert to compact but keep full commit body
+	type entry struct {
+		hash, author, date string
+		body               []string
+	}
 	var entries []entry
 	var cur entry
 
@@ -142,24 +145,24 @@ func gitLog(output string) string {
 		case strings.HasPrefix(line, "Date:   "):
 			cur.date = strings.TrimSpace(strings.TrimPrefix(line, "Date:   "))
 		case strings.HasPrefix(line, "    "):
-			if cur.msg == "" {
-				cur.msg = strings.TrimSpace(line)
+			if msg := strings.TrimSpace(line); msg != "" {
+				cur.body = append(cur.body, msg)
 			}
 		}
 	}
 	flush()
 
-	const limit = 30
-	if len(entries) > limit {
-		entries = entries[:limit]
-	}
-
 	var sb strings.Builder
 	for _, e := range entries {
-		sb.WriteString(fmt.Sprintf("%s  %-20s  %s  %s\n", e.hash, e.author, e.date, e.msg))
-	}
-	if len(entries) == limit {
-		sb.WriteString("...\n")
+		subject := ""
+		if len(e.body) > 0 {
+			subject = e.body[0]
+		}
+		sb.WriteString(fmt.Sprintf("%s  %-20s  %s  %s\n", e.hash, e.author, e.date, subject))
+		// Write additional body lines indented — preserves full context
+		for _, line := range e.body[1:] {
+			sb.WriteString(fmt.Sprintf("         %s\n", line))
+		}
 	}
 	return sb.String()
 }

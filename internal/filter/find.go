@@ -11,8 +11,6 @@ var noisyDirs = []string{
 	"dist", "build", "__pycache__", "target", ".cache",
 }
 
-const maxFindResults = 50
-
 func Find(output string) string {
 	lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
 
@@ -35,13 +33,8 @@ func Find(output string) string {
 		}
 	}
 
-	total := len(clean)
-	shown := clean
-	if total > maxFindResults {
-		shown = clean[:maxFindResults]
-	}
-
-	grouped := groupPaths(shown)
+	// Group all results — no cap, grouping is the compression
+	grouped := groupPaths(clean)
 	dirKeys := make([]string, 0, len(grouped))
 	for d := range grouped {
 		dirKeys = append(dirKeys, d)
@@ -58,14 +51,15 @@ func Find(output string) string {
 		} else if len(files) == 1 {
 			sb.WriteString(files[0] + "\n")
 		} else {
+			// List all files under this dir, indented
 			sb.WriteString(fmt.Sprintf("%s/ (%d files)\n", dir, len(files)))
+			for _, f := range files {
+				sb.WriteString(fmt.Sprintf("  %s\n", f))
+			}
 		}
 	}
 
-	if total > maxFindResults {
-		sb.WriteString(fmt.Sprintf("... +%d more\n", total-maxFindResults))
-	}
-
+	// Noisy dirs: show count only — their contents are almost never useful
 	if len(noisy) > 0 {
 		counts := map[string]int{}
 		for _, p := range noisy {
@@ -77,7 +71,7 @@ func Find(output string) string {
 		}
 		sort.Strings(roots)
 		for _, r := range roots {
-			sb.WriteString(fmt.Sprintf("%s/ (%d files, skipped)\n", r, counts[r]))
+			sb.WriteString(fmt.Sprintf("%s/ (%d files — use explicit path to explore)\n", r, counts[r]))
 		}
 	}
 

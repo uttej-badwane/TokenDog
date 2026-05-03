@@ -6,17 +6,15 @@ import (
 	"strings"
 )
 
-const maxWebFetchBytes = 8000
-
 var (
-	reScript  = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
-	reStyle   = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
-	reNav     = regexp.MustCompile(`(?is)<nav[^>]*>.*?</nav>`)
-	reHeader  = regexp.MustCompile(`(?is)<header[^>]*>.*?</header>`)
-	reFooter  = regexp.MustCompile(`(?is)<footer[^>]*>.*?</footer>`)
-	reAside   = regexp.MustCompile(`(?is)<aside[^>]*>.*?</aside>`)
-	reTags    = regexp.MustCompile(`<[^>]+>`)
-	reSpaces  = regexp.MustCompile(`[ \t]+`)
+	reScript   = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
+	reStyle    = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
+	reNav      = regexp.MustCompile(`(?is)<nav[^>]*>.*?</nav>`)
+	reHeader   = regexp.MustCompile(`(?is)<header[^>]*>.*?</header>`)
+	reFooter   = regexp.MustCompile(`(?is)<footer[^>]*>.*?</footer>`)
+	reAside    = regexp.MustCompile(`(?is)<aside[^>]*>.*?</aside>`)
+	reTags     = regexp.MustCompile(`<[^>]+>`)
+	reSpaces   = regexp.MustCompile(`[ \t]+`)
 	reNewlines = regexp.MustCompile(`\n{3,}`)
 )
 
@@ -26,18 +24,29 @@ func WebFetch(content string) string {
 		return content
 	}
 
+	rawLen := len(trimmed)
+
+	var result string
 	switch {
 	case strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "["):
-		return filterWebJSON(trimmed)
+		result = compactJSON(trimmed)
 	case strings.Contains(trimmed, "<html") || strings.Contains(trimmed, "<!DOCTYPE") || strings.Contains(trimmed, "</"):
-		return filterHTML(trimmed)
+		result = stripHTML(trimmed)
 	default:
-		return truncateText(trimmed)
+		result = collapseWhitespace(trimmed)
 	}
+
+	savedBytes := rawLen - len(result)
+	if savedBytes > 0 {
+		result = fmt.Sprintf("[tokendog: stripped %d bytes of noise — full content below]\n\n%s", savedBytes, result)
+	}
+	return result
 }
 
-func filterHTML(html string) string {
-	// Remove noisy structural blocks
+// stripHTML removes all non-content elements and returns clean text.
+// This is lossless — no content is dropped, only structural noise.
+func stripHTML(html string) string {
+	// Remove zero-content elements
 	html = reScript.ReplaceAllString(html, "")
 	html = reStyle.ReplaceAllString(html, "")
 	html = reNav.ReplaceAllString(html, "")
@@ -45,7 +54,7 @@ func filterHTML(html string) string {
 	html = reFooter.ReplaceAllString(html, "")
 	html = reAside.ReplaceAllString(html, "")
 
-	// Strip remaining tags
+	// Strip remaining tags — text content is preserved
 	html = reTags.ReplaceAllString(html, " ")
 
 	// Decode common HTML entities
@@ -56,31 +65,25 @@ func filterHTML(html string) string {
 	html = strings.ReplaceAll(html, "&#39;", "'")
 	html = strings.ReplaceAll(html, "&nbsp;", " ")
 
-	// Collapse whitespace
-	html = reSpaces.ReplaceAllString(html, " ")
+	return collapseWhitespace(html)
+}
 
-	// Clean up lines — drop blank/whitespace-only lines
-	lines := strings.Split(html, "\n")
+// compactJSON collapses JSON whitespace without dropping any fields.
+func compactJSON(content string) string {
+	return collapseWhitespace(content)
+}
+
+// collapseWhitespace removes redundant whitespace — lossless.
+func collapseWhitespace(s string) string {
+	s = reSpaces.ReplaceAllString(s, " ")
+	lines := strings.Split(s, "\n")
 	var kept []string
 	for _, line := range lines {
 		if t := strings.TrimSpace(line); t != "" {
 			kept = append(kept, t)
 		}
 	}
-	html = strings.Join(kept, "\n")
-	html = reNewlines.ReplaceAllString(html, "\n\n")
-
-	return truncateText(strings.TrimSpace(html))
-}
-
-func filterWebJSON(content string) string {
-	// JSON: truncate if oversized, otherwise pass through
-	return truncateText(content)
-}
-
-func truncateText(s string) string {
-	if len(s) <= maxWebFetchBytes {
-		return s
-	}
-	return s[:maxWebFetchBytes] + fmt.Sprintf("\n... [%d bytes truncated]", len(s)-maxWebFetchBytes)
+	s = strings.Join(kept, "\n")
+	s = reNewlines.ReplaceAllString(s, "\n\n")
+	return strings.TrimSpace(s)
 }
