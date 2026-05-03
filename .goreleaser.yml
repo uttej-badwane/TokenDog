@@ -48,7 +48,8 @@ brews:
     license: "MIT"
     install: |
       bin.install "td"
+      bin.install_symlink "td" => "tokendog"
+      generate_completions_from_executable(bin/"td", "completion")
     test: |
       system "#{bin}/td --version"
-    extra_install: |
-      generate_completions_from_executable(bin/"td", "completion")
+      system "#{bin}/tokendog --version"
