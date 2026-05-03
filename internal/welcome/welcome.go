@@ -42,28 +42,11 @@ var figletRows = []string{
 	"   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝  ╚═════╝  ╚═════╝",
 }
 
-// renderLogo paints the wordmark with T and D highlighted in cyan
-// (the "TokenDog" branding pattern) and OKEN / OG rendered in dim gray.
-// The figlet font emits rows of mixed widths (69-70 runes); we pad to a
-// uniform 70 so the column-based color slicing lines up consistently.
+// renderLogo prints the TOKENDOG figlet in bold white — same look across
+// the install caveats, README, and welcome screen.
 func renderLogo(c *colors) {
-	const targetWidth = 70
 	for _, line := range figletRows {
-		r := []rune(line)
-		for len(r) < targetWidth {
-			r = append(r, ' ')
-		}
-		t := string(r[0:9])
-		oken := string(r[9:44])
-		d := string(r[44:52])
-		og := string(r[52:70])
-		fmt.Println(
-			"  " +
-				c.bold(c.cyan(t)) +
-				c.gray(oken) +
-				c.bold(c.cyan(d)) +
-				c.gray(og),
-		)
+		fmt.Println("  " + c.bold(c.white(line)))
 	}
 }
 

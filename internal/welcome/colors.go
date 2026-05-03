@@ -43,4 +43,5 @@ func (c *colors) red(s string) string    { return c.wrap("31", s) }
 func (c *colors) green(s string) string  { return c.wrap("32", s) }
 func (c *colors) yellow(s string) string { return c.wrap("33", s) }
 func (c *colors) cyan(s string) string   { return c.wrap("36", s) }
+func (c *colors) white(s string) string  { return c.wrap("97", s) }
 func (c *colors) gray(s string) string   { return c.wrap("90", s) }
