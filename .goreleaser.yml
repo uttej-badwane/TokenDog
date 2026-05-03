@@ -9,6 +9,9 @@ builds:
       - CGO_ENABLED=0
     main: .
     binary: td
+    ldflags:
+      - -s -w
+      - -X tokendog/cmd.Version={{.Version}}
     goos:
       - darwin
       - linux
