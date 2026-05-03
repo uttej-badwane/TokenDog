@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"tokendog/internal/welcome"
 )
 
 var Version = "dev"
@@ -13,6 +14,16 @@ var rootCmd = &cobra.Command{
 	Use:     "td",
 	Short:   "TokenDog — token-optimized CLI proxy for AI coding assistants",
 	Version: Version,
+	Run: func(cmd *cobra.Command, args []string) {
+		// First-run UX: when invoked with no args and the marker is missing,
+		// show the welcome screen instead of plain help.
+		if welcome.IsFirstRun() {
+			welcome.Render(Version)
+			_ = welcome.MarkInitialized()
+			return
+		}
+		_ = cmd.Help()
+	},
 }
 
 func Execute() {
@@ -23,6 +34,7 @@ func Execute() {
 }
 
 func init() {
+	rootCmd.AddCommand(welcomeCmd)
 	rootCmd.AddCommand(hookCmd)
 	rootCmd.AddCommand(pipeCmd)
 	rootCmd.AddCommand(gitCmd)

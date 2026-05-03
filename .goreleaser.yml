@@ -56,46 +56,7 @@ brews:
     test: |
       system "#{bin}/td --version"
       system "#{bin}/tokendog --version"
-    caveats: |2
-                    .---""""---.
-                  .'   /\   /\  '.
-                 /    /  \-/  \   \
-                |    |  o   o  |   |
-                |     \   ▼   /    |
-                |      '.___.'     |
-                 \    /|     |\   /
-                  '. / |\ / /| \.'
-                    \  | V V |  /
-                     '-+-----+-'
-                      T O K E N D O G
+    caveats: |
+      TokenDog installed.
 
-         Token-optimized CLI proxy for AI coding assistants
-         ───────────────────────────────────────────────────
-
-         Quick start:
-           1. Add hooks to ~/.claude/settings.json:
-
-              "hooks": {
-                "PreToolUse": [{"matcher":"Bash","hooks":[{
-                  "type":"command","command":"td hook claude"
-                }]}],
-                "PostToolUse": [
-                  {"matcher":"WebFetch","hooks":[{
-                    "type":"command","command":"td pipe webfetch"
-                  }]},
-                  {"matcher":"Glob","hooks":[{
-                    "type":"command","command":"td pipe glob"
-                  }]},
-                  {"matcher":"Grep","hooks":[{
-                    "type":"command","command":"td pipe grep"
-                  }]},
-                  {"matcher":"WebSearch","hooks":[{
-                    "type":"command","command":"td pipe websearch"
-                  }]}
-                ]
-              }
-
-           2. View savings:    td gain
-           3. Full history:    td gain --history
-
-         Docs: https://github.com/uttej-badwane/TokenDog
+      Run  td welcome  to see setup status and a quick-start guide.
