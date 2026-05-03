@@ -15,10 +15,13 @@ type ClaudeHookOutput struct {
 
 // supported maps the leading binary name to its tokendog subcommand
 var supported = map[string]string{
-	"git":    "git",
-	"ls":     "ls",
-	"find":   "find",
-	"docker": "docker",
+	"git":     "git",
+	"ls":      "ls",
+	"find":    "find",
+	"docker":  "docker",
+	"jq":      "jq",
+	"curl":    "curl",
+	"kubectl": "kubectl",
 }
 
 func ProcessClaude(input ClaudeHookInput) *ClaudeHookOutput {

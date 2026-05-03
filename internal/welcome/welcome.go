@@ -15,8 +15,9 @@ func Render(version string) {
 	colors := newColors()
 
 	fmt.Println()
-	fmt.Println(colors.bold(colors.cyan("  TokenDog ")) + colors.gray(version))
-	fmt.Println(colors.gray("  Token-optimized CLI proxy for AI coding assistants"))
+	renderLogo(colors)
+	fmt.Println()
+	fmt.Println(colors.gray("  Token-optimized CLI proxy for AI coding assistants  ") + colors.dim(version))
 	fmt.Println()
 
 	renderSetup(colors)
@@ -26,6 +27,44 @@ func Render(version string) {
 	fmt.Println()
 	fmt.Println(colors.gray("  Documentation:  https://github.com/uttej-badwane/TokenDog"))
 	fmt.Println()
+}
+
+// figlet rows for "TOKENDOG" in ANSI Shadow style. Each row is 69 runes wide
+// with consistent letter-column boundaries:
+//   T=[0:9]  O=[9:18]  K=[18:26]  E=[26:34]  N=[34:44]
+//   D=[44:52]  O=[52:61]  G=[61:69]
+var figletRows = []string{
+	"████████╗ ██████╗ ██╗  ██╗███████╗███╗   ██╗██████╗  ██████╗  ██████╗",
+	"╚══██╔══╝██╔═══██╗██║ ██╔╝██╔════╝████╗  ██║██╔══██╗██╔═══██╗██╔════╝",
+	"   ██║   ██║   ██║█████╔╝ █████╗  ██╔██╗ ██║██║  ██║██║   ██║██║  ███╗",
+	"   ██║   ██║   ██║██╔═██╗ ██╔══╝  ██║╚██╗██║██║  ██║██║   ██║██║   ██║",
+	"   ██║   ╚██████╔╝██║  ██╗███████╗██║ ╚████║██████╔╝╚██████╔╝╚██████╔╝",
+	"   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝  ╚═════╝  ╚═════╝",
+}
+
+// renderLogo paints the wordmark with T and D highlighted in cyan
+// (the "TokenDog" branding pattern) and OKEN / OG rendered in dim gray.
+// The figlet font emits rows of mixed widths (69-70 runes); we pad to a
+// uniform 70 so the column-based color slicing lines up consistently.
+func renderLogo(c *colors) {
+	const targetWidth = 70
+	for _, line := range figletRows {
+		r := []rune(line)
+		for len(r) < targetWidth {
+			r = append(r, ' ')
+		}
+		t := string(r[0:9])
+		oken := string(r[9:44])
+		d := string(r[44:52])
+		og := string(r[52:70])
+		fmt.Println(
+			"  " +
+				c.bold(c.cyan(t)) +
+				c.gray(oken) +
+				c.bold(c.cyan(d)) +
+				c.gray(og),
+		)
+	}
 }
 
 func renderSetup(c *colors) {
@@ -88,6 +127,7 @@ func renderCommands(c *colors) {
 	rows := [][2]string{
 		{"td gain", "View token savings summary"},
 		{"td gain --history", "Recent commands with savings"},
+		{"td discover", "Find unrewritten commands in your Claude history"},
 		{"td git status", "Filtered git status (manual)"},
 		{"td rewrite <cmd>", "Debug: see how a command is rewritten"},
 		{"td --help", "All commands"},

@@ -41,6 +41,10 @@ func init() {
 	rootCmd.AddCommand(lsCmd)
 	rootCmd.AddCommand(findCmd)
 	rootCmd.AddCommand(dockerCmd)
+	rootCmd.AddCommand(jqCmd)
+	rootCmd.AddCommand(curlCmd)
+	rootCmd.AddCommand(kubectlCmd)
 	rootCmd.AddCommand(gainCmd)
 	rootCmd.AddCommand(rewriteCmd)
+	rootCmd.AddCommand(discoverCmd)
 }
