@@ -24,6 +24,7 @@ func Execute() {
 
 func init() {
 	rootCmd.AddCommand(hookCmd)
+	rootCmd.AddCommand(pipeCmd)
 	rootCmd.AddCommand(gitCmd)
 	rootCmd.AddCommand(lsCmd)
 	rootCmd.AddCommand(findCmd)
