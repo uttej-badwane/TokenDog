@@ -1,0 +1,54 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    main: .
+    binary: td
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+brews:
+  - name: tokendog
+    repository:
+      owner: uttej-badwane
+      name: homebrew-tokendog
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/uttej-badwane/TokenDog"
+    description: "Token-optimized CLI proxy for AI coding assistants — saves 60-90% of tokens on common dev operations"
+    license: "MIT"
+    install: |
+      bin.install "td"
+    test: |
+      system "#{bin}/td --version"
+    extra_install: |
+      generate_completions_from_executable(bin/"td", "completion")
