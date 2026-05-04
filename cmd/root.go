@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 
 	"github.com/spf13/cobra"
 	"tokendog/internal/welcome"
@@ -14,6 +16,12 @@ var rootCmd = &cobra.Command{
 	Use:     "td",
 	Short:   "TokenDog — token-optimized CLI proxy for AI coding assistants",
 	Version: Version,
+	// All wrapper subcommands forward the wrapped tool's stderr verbatim.
+	// When that tool exits non-zero (e.g. `git status` in a non-repo) we
+	// already have the relevant error visible to the user — Cobra's default
+	// "Error: ..." line and usage banner just adds noise on top.
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		// First-run UX: when invoked with no args and the marker is missing,
 		// show the welcome screen instead of plain help.
@@ -27,10 +35,19 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	err := rootCmd.Execute()
+	if err == nil {
+		return
 	}
+	// When a wrapper subcommand failed, propagate the wrapped tool's exit
+	// code without re-printing the error — its stderr already reached the
+	// user. Other errors (Cobra parsing, our own logic) get a brief message.
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		os.Exit(exitErr.ExitCode())
+	}
+	fmt.Fprintln(os.Stderr, err)
+	os.Exit(1)
 }
 
 func init() {

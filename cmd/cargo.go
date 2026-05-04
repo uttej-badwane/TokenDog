@@ -20,13 +20,7 @@ var cargoCmd = &cobra.Command{
 }
 
 func runCargo(_ *cobra.Command, args []string) error {
-	subcmd := ""
-	for _, arg := range args {
-		if !strings.HasPrefix(arg, "-") {
-			subcmd = arg
-			break
-		}
-	}
+	subcmd := extractSubcommand(args, cargoValueFlags)
 
 	switch subcmd {
 	case "test":

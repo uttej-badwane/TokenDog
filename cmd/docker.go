@@ -20,17 +20,12 @@ var dockerCmd = &cobra.Command{
 }
 
 func runDocker(_ *cobra.Command, args []string) error {
-	subcmd := ""
-	for _, arg := range args {
-		if !strings.HasPrefix(arg, "-") {
-			subcmd = arg
-			break
-		}
-	}
+	subcmd := extractSubcommand(args, dockerValueFlags)
 
 	start := time.Now()
 	c := exec.Command("docker", args...)
 	c.Stderr = os.Stderr
+	c.Stdin = os.Stdin
 	out, err := c.Output()
 	elapsed := time.Since(start).Milliseconds()
 

@@ -23,6 +23,7 @@ func runCurl(_ *cobra.Command, args []string) error {
 	start := time.Now()
 	c := exec.Command("curl", args...)
 	c.Stderr = os.Stderr
+	c.Stdin = os.Stdin
 	out, err := c.Output()
 	elapsed := time.Since(start).Milliseconds()
 

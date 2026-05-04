@@ -18,8 +18,11 @@ type HookSpecificOutput struct {
 	UpdatedInput  map[string]any `json:"updatedInput"`
 }
 
-// supported maps the leading binary name to its tokendog subcommand
-var supported = map[string]string{
+// Supported maps the leading binary name to its tokendog subcommand. It is
+// the single source of truth for "td knows how to filter this" — `td
+// discover` reads it to classify history rows, and the hook reads it to
+// decide whether to rewrite. Treat as read-only.
+var Supported = map[string]string{
 	"git":     "git",
 	"ls":      "ls",
 	"find":    "find",
@@ -81,7 +84,7 @@ func RewriteCommand(cmd string) string {
 	// Skip leading env-var assignments (e.g. `AWS_PROFILE=foo aws ec2 ...`)
 	// so the hook still recognizes the underlying binary.
 	binIdx := 0
-	for binIdx < len(parts) && isEnvAssignment(parts[binIdx]) {
+	for binIdx < len(parts) && IsEnvAssignment(parts[binIdx]) {
 		binIdx++
 	}
 	if binIdx >= len(parts) {
@@ -92,7 +95,7 @@ func RewriteCommand(cmd string) string {
 	if idx := strings.LastIndex(bin, "/"); idx >= 0 {
 		bin = bin[idx+1:]
 	}
-	sub, ok := supported[bin]
+	sub, ok := Supported[bin]
 	if !ok {
 		return cmd
 	}
@@ -110,12 +113,12 @@ func RewriteCommand(cmd string) string {
 	return out
 }
 
-// isEnvAssignment reports whether s is a shell env-var assignment of the
+// IsEnvAssignment reports whether s is a shell env-var assignment of the
 // form NAME=VALUE where NAME starts with a letter or underscore and contains
 // only letters, digits, and underscores. Quoted values with embedded spaces
 // are not handled (Fields would have split them already), but the common
 // `AWS_PROFILE=foo`, `DEBUG=1`, `PATH=/x:/y` shapes all match.
-func isEnvAssignment(s string) bool {
+func IsEnvAssignment(s string) bool {
 	eq := strings.IndexByte(s, '=')
 	if eq <= 0 {
 		return false

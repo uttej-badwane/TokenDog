@@ -20,17 +20,12 @@ var gitCmd = &cobra.Command{
 }
 
 func runGit(_ *cobra.Command, args []string) error {
-	subcmd := ""
-	for _, arg := range args {
-		if !strings.HasPrefix(arg, "-") {
-			subcmd = arg
-			break
-		}
-	}
+	subcmd := extractSubcommand(args, gitValueFlags)
 
 	start := time.Now()
 	c := exec.Command("git", args...)
 	c.Stderr = os.Stderr
+	c.Stdin = os.Stdin
 	out, err := c.Output()
 	elapsed := time.Since(start).Milliseconds()
 

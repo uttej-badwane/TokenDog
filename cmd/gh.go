@@ -20,13 +20,7 @@ var ghCmd = &cobra.Command{
 }
 
 func runGH(_ *cobra.Command, args []string) error {
-	subcmd := ""
-	for _, arg := range args {
-		if !strings.HasPrefix(arg, "-") {
-			subcmd = arg
-			break
-		}
-	}
+	subcmd := extractSubcommand(args, ghValueFlags)
 
 	start := time.Now()
 	c := exec.Command("gh", args...)

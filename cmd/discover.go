@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"tokendog/internal/hook"
 )
 
 var discoverCmd = &cobra.Command{
@@ -22,18 +23,6 @@ type discoverStat struct {
 	count     int
 	bytes     int
 	rewritten int
-}
-
-// supportedRewrites lists command names td knows how to filter.
-// Keep this in sync with internal/hook/hook.go supported map.
-var supportedRewrites = map[string]bool{
-	"git":     true,
-	"ls":      true,
-	"find":    true,
-	"docker":  true,
-	"jq":      true,
-	"curl":    true,
-	"kubectl": true,
 }
 
 func runDiscover(_ *cobra.Command, _ []string) error {
@@ -106,7 +95,7 @@ func runDiscover(_ *cobra.Command, _ []string) error {
 			coverage = float64(r.s.rewritten) / float64(r.s.count) * 100
 		}
 		status := "  not handled — open issue to add filter"
-		if supportedRewrites[r.name] {
+		if _, ok := hook.Supported[r.name]; ok {
 			status = "  supported by td  (check hook config)"
 			if r.s.rewritten == r.s.count {
 				status = "  ✓ fully covered"
@@ -203,21 +192,30 @@ func scanSession(path string, stats map[string]*discoverStat, totalCmds, totalRe
 }
 
 // analyzeCommand returns the underlying binary name and whether the
-// command is already routed through td.
+// command is already routed through td. Leading shell env-var assignments
+// (e.g. `AWS_PROFILE=foo aws ec2 ...`) are skipped so the discovery report
+// classifies the call under `aws`, not `AWS_PROFILE=foo`.
 func analyzeCommand(cmd string) (string, bool) {
 	parts := strings.Fields(cmd)
 	if len(parts) == 0 {
 		return "", false
 	}
-	first := parts[0]
+	idx := 0
+	for idx < len(parts) && hook.IsEnvAssignment(parts[idx]) {
+		idx++
+	}
+	if idx >= len(parts) {
+		return "", false
+	}
+	first := parts[idx]
 	if first == "td" || first == "tokendog" {
-		if len(parts) < 2 {
+		if idx+1 >= len(parts) {
 			return "", false
 		}
-		return parts[1], true
+		return parts[idx+1], true
 	}
-	if idx := strings.LastIndex(first, "/"); idx >= 0 {
-		first = first[idx+1:]
+	if slash := strings.LastIndex(first, "/"); slash >= 0 {
+		first = first[slash+1:]
 	}
 	return first, false
 }
