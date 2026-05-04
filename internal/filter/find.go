@@ -75,7 +75,11 @@ func Find(output string) string {
 		}
 	}
 
-	return sb.String()
+	filtered := sb.String()
+	if len(filtered) >= len(output) {
+		return output
+	}
+	return filtered
 }
 
 func isNoisyPath(path string) bool {

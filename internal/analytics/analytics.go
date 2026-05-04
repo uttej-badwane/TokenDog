@@ -222,6 +222,9 @@ func RenderGain(records []Record, showHistory bool) string {
 
 func progressBar(pct float64, width int) string {
 	filled := int(pct / 100 * float64(width))
+	if filled < 0 {
+		filled = 0
+	}
 	if filled > width {
 		filled = width
 	}
