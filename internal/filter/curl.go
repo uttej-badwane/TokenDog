@@ -1,6 +1,14 @@
 package filter
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
+
+var (
+	reSpaces   = regexp.MustCompile(`[ \t]+`)
+	reNewlines = regexp.MustCompile(`\n{3,}`)
+)
 
 // Curl compresses curl response output. If the body is JSON, compact it
 // (preserving every key and value — silent data mangling is explicitly
@@ -18,4 +26,19 @@ func Curl(content string) string {
 	}
 
 	return collapseWhitespace(trimmed)
+}
+
+// collapseWhitespace removes redundant whitespace — lossless.
+func collapseWhitespace(s string) string {
+	s = reSpaces.ReplaceAllString(s, " ")
+	lines := strings.Split(s, "\n")
+	var kept []string
+	for _, line := range lines {
+		if t := strings.TrimSpace(line); t != "" {
+			kept = append(kept, t)
+		}
+	}
+	s = strings.Join(kept, "\n")
+	s = reNewlines.ReplaceAllString(s, "\n\n")
+	return strings.TrimSpace(s)
 }
