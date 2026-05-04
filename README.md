@@ -9,7 +9,7 @@
    ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝  ╚═════╝  ╚═════╝
 ```
 
-**Token-optimized CLI proxy for AI coding assistants.** TokenDog sits between your AI assistant (Claude Code, Cursor, etc.) and your shell, compressing command output and tool responses before they reach the model — saving 60–90% of tokens on common dev operations.
+**Token-optimized CLI proxy for AI coding assistants.** TokenDog sits between your AI assistant (Claude Code, Cursor, etc.) and your shell, compressing command output before it reaches the model — saving 60–90% of tokens on common dev operations.
 
 [![Release](https://img.shields.io/github/v/release/uttej-badwane/TokenDog)](https://github.com/uttej-badwane/TokenDog/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -18,7 +18,7 @@
 
 ## Why
 
-Claude Code and similar tools run hundreds of `git`, `ls`, `find`, and `grep` commands per session, fetch GitHub pages, search the web, and pipe huge JSON through `jq` — each emitting verbose output that gets read into context. A single `git log` block, a 600KB GitHub page, or a `find` that hits `node_modules` can burn thousands of tokens for content the model rarely needs.
+Claude Code and similar tools run hundreds of `git`, `ls`, `find`, and `grep` commands per session and pipe huge JSON through `jq` — each emitting verbose output that gets read into context. A single `git log` block, a noisy `kubectl get`, or a `find` that hits `node_modules` can burn thousands of tokens for content the model rarely needs.
 
 TokenDog filters this output **losslessly** — it strips structural noise (HTML tags, hint lines, permission bits, redundant whitespace) without dropping a single piece of meaningful content. The model still gets every fact it needs, just without the boilerplate.
 
@@ -52,12 +52,6 @@ Add the following to `~/.claude/settings.json`:
         "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "td hook claude" }]
       }
-    ],
-    "PostToolUse": [
-      { "matcher": "WebFetch",   "hooks": [{ "type": "command", "command": "td pipe webfetch" }] },
-      { "matcher": "Glob",       "hooks": [{ "type": "command", "command": "td pipe glob" }] },
-      { "matcher": "Grep",       "hooks": [{ "type": "command", "command": "td pipe grep" }] },
-      { "matcher": "WebSearch",  "hooks": [{ "type": "command", "command": "td pipe websearch" }] }
     ]
   }
 }
@@ -89,16 +83,9 @@ That's it. Run `td welcome` again — every checkmark should turn green.
 | `aws` / `gcloud` / `az` | Lossless JSON compaction, table normalization, YAML blank-line collapse | **30–80%** |
 | `make` | Drop compile spam, keep warnings/errors verbatim | **30–70%** |
 
-### Tool response interception (PostToolUse hook)
-
-| Tool | Strategy | Typical savings |
-|------|----------|-----------------|
-| `WebFetch` | Strip HTML structural noise (script, style, nav, header, footer) | **40–99%** |
-| `Glob` | Group paths by directory | **40–70%** |
-| `Grep` | Group matches by file with line numbers | **30–50%** |
-| `WebSearch` | Collapse redundant whitespace | **10–25%** |
-
 **Lossless principle:** TokenDog never silently drops content. It restructures and removes structural noise. If filtering would lose data, the original is passed through unchanged.
+
+> **Why no PostToolUse hooks?** Claude Code's PostToolUse hook can inject `additionalContext` but cannot replace the `tool_response` already sent to the model. That makes it impossible to compact native tools (`Glob`, `Grep`, `WebFetch`, `WebSearch`) after the fact — earlier versions exposed `td pipe *` for this, but it was a no-op against current Claude Code, so it has been removed.
 
 ---
 
@@ -106,7 +93,7 @@ That's it. Run `td welcome` again — every checkmark should turn green.
 
 ### Hook-based (automatic)
 
-Once configured, TokenDog rewrites Claude Code's Bash calls and intercepts tool responses transparently. You don't run anything manually — Claude calls `git status`, the hook rewrites it to `td git status`, and the filtered output goes back to Claude.
+Once configured, TokenDog rewrites Claude Code's Bash calls transparently. You don't run anything manually — Claude calls `git status`, the hook rewrites it to `td git status`, and the filtered output goes back to Claude.
 
 ### Manual (CLI)
 
@@ -186,28 +173,27 @@ td rewrite "git log --oneline -20"   # show how the hook would rewrite
 ## How It Works
 
 ```
-┌─────────────────────────────────────────────────────┐
-│              Claude Code / AI Assistant              │
-└────────────┬─────────────────────────┬──────────────┘
-             │ PreToolUse: Bash        │ PostToolUse: WebFetch/Glob/Grep/WebSearch
-             ▼                         ▼
-      ┌──────────────┐         ┌──────────────────┐
-      │ td hook      │         │ td pipe ...      │
-      │ claude       │         │                  │
-      │              │         │ ─ extract result │
-      │ ─ rewrite    │         │ ─ strip noise    │
-      │   command to │         │ ─ collapse ws    │
-      │   td <sub>   │         │ ─ return JSON    │
-      └──────┬───────┘         └────────┬─────────┘
-             │                          │
-             ▼                          ▼
-      Original cmd runs              Modified response
-      via td <sub>                   sent back to model
-      with filter applied
+┌─────────────────────────────────────────┐
+│       Claude Code / AI Assistant         │
+└────────────────┬────────────────────────┘
+                 │ PreToolUse: Bash
+                 ▼
+          ┌──────────────┐
+          │ td hook      │
+          │ claude       │
+          │              │
+          │ ─ rewrite    │
+          │   command to │
+          │   td <sub>   │
+          └──────┬───────┘
+                 │
+                 ▼
+        Original cmd runs
+        via td <sub>
+        with filter applied
 ```
 
-- **PreToolUse** rewrites Bash commands so they execute through TokenDog's filters.
-- **PostToolUse** intercepts tool results (WebFetch, Grep, Glob, WebSearch) and returns a compressed version.
+- **PreToolUse / Bash** rewrites the Bash `command` field so the rewritten version executes through TokenDog's filters. The hook returns `hookSpecificOutput.updatedInput` per Claude Code's current schema.
 - All commands record analytics in `~/.config/tokendog/history.jsonl`.
 
 ---
@@ -223,7 +209,7 @@ At current Claude API pricing:
 | 50 devs | ~1.5B | $4,500 | $22,500 |
 | 100 devs | ~3B | $9,000 | $45,000 |
 
-Numbers based on observed usage of ~1.5M tokens saved per active dev per day. WebFetch is by far the largest contributor for sessions involving GitHub repo analysis (a single repo browse can save 600KB+ per page).
+Numbers based on observed usage of Bash filters (`gh`, `aws`, `git`, `kubectl`, `find`, `jq`, package managers, test runners). Heavy `gh` and cloud-CLI workflows benefit the most.
 
 ---
 
@@ -259,12 +245,8 @@ td gcloud [args]         gcloud CLI with JSON/YAML/table compaction (lossless)
 td az [args]             az CLI with JSON/table compaction (lossless)
 td make [args]           make with successful-compile lines dropped
 
-# Hook handlers (used by Claude Code, not invoked manually)
+# Hook handler (used by Claude Code, not invoked manually)
 td hook claude           Process PreToolUse hooks (stdin → stdout JSON)
-td pipe webfetch         Process PostToolUse for WebFetch
-td pipe glob             Process PostToolUse for Glob
-td pipe grep             Process PostToolUse for Grep
-td pipe websearch        Process PostToolUse for WebSearch
 ```
 
 ---

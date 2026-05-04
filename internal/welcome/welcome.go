@@ -56,16 +56,12 @@ func renderSetup(c *colors) {
 		binary = "(detected at runtime)"
 	}
 
-	pre, fetch, glob, grep, search := detectClaudeHooks()
+	pre := detectClaudeHooks()
 
 	fmt.Println(c.bold("  Setup"))
 	fmt.Println()
 	fmt.Println("    " + c.green("●") + " Binary installed                  " + c.gray(binary))
 	statusLine(c, "PreToolUse / Bash", pre)
-	statusLine(c, "PostToolUse / WebFetch", fetch)
-	statusLine(c, "PostToolUse / Glob", glob)
-	statusLine(c, "PostToolUse / Grep", grep)
-	statusLine(c, "PostToolUse / WebSearch", search)
 	fmt.Println()
 }
 
@@ -89,12 +85,6 @@ func renderQuickStart(c *colors) {
       "hooks": {
         "PreToolUse": [
           {"matcher":"Bash","hooks":[{"type":"command","command":"td hook claude"}]}
-        ],
-        "PostToolUse": [
-          {"matcher":"WebFetch", "hooks":[{"type":"command","command":"td pipe webfetch"}]},
-          {"matcher":"Glob",     "hooks":[{"type":"command","command":"td pipe glob"}]},
-          {"matcher":"Grep",     "hooks":[{"type":"command","command":"td pipe grep"}]},
-          {"matcher":"WebSearch","hooks":[{"type":"command","command":"td pipe websearch"}]}
         ]
       }
     }`
@@ -171,23 +161,22 @@ type claudeHookGroup struct {
 
 type claudeSettings struct {
 	Hooks struct {
-		PreToolUse  []claudeHookGroup `json:"PreToolUse"`
-		PostToolUse []claudeHookGroup `json:"PostToolUse"`
+		PreToolUse []claudeHookGroup `json:"PreToolUse"`
 	} `json:"hooks"`
 }
 
-func detectClaudeHooks() (pre, fetch, glob, grep, search bool) {
+func detectClaudeHooks() bool {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return
+		return false
 	}
 	data, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
 	if err != nil {
-		return
+		return false
 	}
 	var s claudeSettings
 	if err := json.Unmarshal(data, &s); err != nil {
-		return
+		return false
 	}
 	for _, g := range s.Hooks.PreToolUse {
 		if g.Matcher != "Bash" {
@@ -195,31 +184,9 @@ func detectClaudeHooks() (pre, fetch, glob, grep, search bool) {
 		}
 		for _, h := range g.Hooks {
 			if strings.Contains(h.Command, "td hook claude") {
-				pre = true
+				return true
 			}
 		}
 	}
-	for _, g := range s.Hooks.PostToolUse {
-		for _, h := range g.Hooks {
-			switch g.Matcher {
-			case "WebFetch":
-				if strings.Contains(h.Command, "td pipe webfetch") {
-					fetch = true
-				}
-			case "Glob":
-				if strings.Contains(h.Command, "td pipe glob") {
-					glob = true
-				}
-			case "Grep":
-				if strings.Contains(h.Command, "td pipe grep") {
-					grep = true
-				}
-			case "WebSearch":
-				if strings.Contains(h.Command, "td pipe websearch") {
-					search = true
-				}
-			}
-		}
-	}
-	return
+	return false
 }

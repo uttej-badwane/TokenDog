@@ -10,7 +10,12 @@ type ClaudeHookInput struct {
 }
 
 type ClaudeHookOutput struct {
-	ToolInput map[string]any `json:"tool_input,omitempty"`
+	HookSpecificOutput *HookSpecificOutput `json:"hookSpecificOutput,omitempty"`
+}
+
+type HookSpecificOutput struct {
+	HookEventName string         `json:"hookEventName"`
+	UpdatedInput  map[string]any `json:"updatedInput"`
 }
 
 // supported maps the leading binary name to its tokendog subcommand
@@ -55,7 +60,12 @@ func ProcessClaude(input ClaudeHookInput) *ClaudeHookOutput {
 		newInput[k] = v
 	}
 	newInput["command"] = rewritten
-	return &ClaudeHookOutput{ToolInput: newInput}
+	return &ClaudeHookOutput{
+		HookSpecificOutput: &HookSpecificOutput{
+			HookEventName: "PreToolUse",
+			UpdatedInput:  newInput,
+		},
+	}
 }
 
 func RewriteCommand(cmd string) string {
