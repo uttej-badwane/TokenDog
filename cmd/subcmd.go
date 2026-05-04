@@ -55,9 +55,9 @@ var kubectlValueFlags = map[string]bool{
 	"-n": true, "--namespace": true,
 	"--context": true, "--cluster": true, "--user": true,
 	"--kubeconfig": true,
-	"--as": true, "--as-group": true,
+	"--as":         true, "--as-group": true,
 	"--token": true,
-	"-s": true, "--server": true,
+	"-s":      true, "--server": true,
 	"--request-timeout": true, "--cache-dir": true,
 }
 

@@ -81,13 +81,13 @@ func LoadAll() ([]Record, error) {
 }
 
 type Summary struct {
-	TotalCommands     int
-	TotalRawBytes     int
+	TotalCommands      int
+	TotalRawBytes      int
 	TotalFilteredBytes int
-	TotalDurationMs   int64
+	TotalDurationMs    int64
 }
 
-func (s Summary) BytesSaved() int { return s.TotalRawBytes - s.TotalFilteredBytes }
+func (s Summary) BytesSaved() int  { return s.TotalRawBytes - s.TotalFilteredBytes }
 func (s Summary) TokensSaved() int { return EstimateTokens(s.BytesSaved()) }
 func (s Summary) SavedPct() float64 {
 	if s.TotalRawBytes == 0 {
