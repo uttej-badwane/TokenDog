@@ -34,16 +34,16 @@ func Test(runner string, output string) string {
 // doubt, return true so we pass through verbatim — hiding a real failure
 // behind a compressed summary would be worse than zero compression.
 var failureSignals = []*regexp.Regexp{
-	regexp.MustCompile(`(?m)^FAILED `),                  // pytest
-	regexp.MustCompile(`(?m)^=+ FAILURES =+`),           // pytest
-	regexp.MustCompile(`(?m)^=+ ERRORS =+`),             // pytest
-	regexp.MustCompile(`\b\d+ failed\b`),                // pytest/jest summaries
-	regexp.MustCompile(`\b\d+ error[s]?\b`),             // generic
-	regexp.MustCompile(`(?m)^FAIL\b`),                   // go/jest
-	regexp.MustCompile(`(?m)^--- FAIL:`),                // go test
-	regexp.MustCompile(`(?m)^Tests: .*failed`),          // jest summary
-	regexp.MustCompile(`(?m)^test result: FAILED`),      // cargo test
-	regexp.MustCompile(`panic:`),                        // go panic
+	regexp.MustCompile(`(?m)^FAILED `),                   // pytest
+	regexp.MustCompile(`(?m)^=+ FAILURES =+`),            // pytest
+	regexp.MustCompile(`(?m)^=+ ERRORS =+`),              // pytest
+	regexp.MustCompile(`\b\d+ failed\b`),                 // pytest/jest summaries
+	regexp.MustCompile(`\b\d+ error[s]?\b`),              // generic
+	regexp.MustCompile(`(?m)^FAIL\b`),                    // go/jest
+	regexp.MustCompile(`(?m)^--- FAIL:`),                 // go test
+	regexp.MustCompile(`(?m)^Tests: .*failed`),           // jest summary
+	regexp.MustCompile(`(?m)^test result: FAILED`),       // cargo test
+	regexp.MustCompile(`panic:`),                         // go panic
 	regexp.MustCompile(`(?m)^\s+at .*\.(js|ts|jsx|tsx)`), // jest stack trace
 }
 
