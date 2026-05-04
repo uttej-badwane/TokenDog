@@ -43,12 +43,10 @@ func parseLsLine(line string) (string, bool) {
 	size := fields[4]
 	name := strings.Join(fields[8:], " ")
 
-	// Skip . and ..
+	// Skip . and .. — every directory has them, they carry no information.
+	// Other dotfiles ARE preserved: when a user runs `ls -la`, they explicitly
+	// want to see them, and dropping them would violate the lossless contract.
 	if name == "." || name == ".." {
-		return "", false
-	}
-	// Skip hidden files
-	if strings.HasPrefix(name, ".") {
 		return "", false
 	}
 

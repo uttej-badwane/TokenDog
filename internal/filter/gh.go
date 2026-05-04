@@ -31,6 +31,9 @@ func GH(subcommand string, output string) string {
 // text) are preserved verbatim — this protects PR/issue body content that
 // `gh ... view` mixes in with metadata.
 func ghTable(output string) string {
+	if output == "" {
+		return output
+	}
 	lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
 	var sb strings.Builder
 	for _, line := range lines {
@@ -43,7 +46,11 @@ func ghTable(output string) string {
 		sb.WriteString(strings.Join(fields, "  "))
 		sb.WriteString("\n")
 	}
-	return sb.String()
+	filtered := sb.String()
+	if len(filtered) >= len(output) {
+		return output
+	}
+	return filtered
 }
 
 // looksTabular returns true when a line contains at least one run of 2+

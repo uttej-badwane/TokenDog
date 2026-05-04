@@ -212,7 +212,7 @@ func RenderGain(records []Record, showHistory bool) string {
 			if len(name) > 32 {
 				name = name[:29] + "..."
 			}
-			b.WriteString(fmt.Sprintf("%s %s %-34s -%3.0f%% (%s)\n",
+			b.WriteString(fmt.Sprintf("%s %s %-34s %4.0f%% (%s)\n",
 				r.Timestamp.Format("01-02 15:04"), arrow, name, r.SavedPct(), humanBytes(r.BytesSaved())))
 		}
 	}

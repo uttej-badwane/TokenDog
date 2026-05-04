@@ -25,6 +25,7 @@ func gitStatus(output string) string {
 
 	var branch string
 	var modified, added, deleted, untracked []string
+	recognized := false
 
 	var section string
 	for _, line := range lines {
@@ -33,6 +34,7 @@ func gitStatus(output string) string {
 		switch {
 		case strings.HasPrefix(line, "On branch "):
 			branch = strings.TrimPrefix(line, "On branch ")
+			recognized = true
 		case strings.HasPrefix(line, "Your branch is up to date with '"):
 			remote := strings.TrimPrefix(line, "Your branch is up to date with '")
 			remote = strings.TrimSuffix(remote, "'.")
@@ -89,8 +91,16 @@ func gitStatus(output string) string {
 	if len(untracked) > 0 {
 		sb.WriteString(fmt.Sprintf("untracked(%d): %s\n", len(untracked), joinTrunc(untracked, 3)))
 	}
+	// Only return the synthetic "clean" output when we actually recognized
+	// a git-status preamble. Otherwise the input was something else entirely
+	// (an error, a porcelain format we don't parse, etc.) and we must pass
+	// it through verbatim — silently rewriting an error message to "clean"
+	// would hide real failures.
 	if sb.Len() == 0 {
-		return "clean\n"
+		if recognized {
+			return "clean\n"
+		}
+		return output
 	}
 	return sb.String()
 }
@@ -101,15 +111,12 @@ func gitLog(output string) string {
 		return output
 	}
 
-	// Already compact (--oneline or similar): just limit lines
+	// Already compact (--oneline or similar): nothing to do — pass through.
+	// Earlier versions truncated to 30 lines + "(N more)", but that drops
+	// commits the user explicitly asked for and violates the lossless
+	// contract. If the user wants fewer commits, they can pass `-N`.
 	if !strings.HasPrefix(lines[0], "commit ") {
-		const limit = 30
-		if len(lines) > limit {
-			extra := len(lines) - limit
-			lines = lines[:limit]
-			lines = append(lines, fmt.Sprintf("... (%d more)", extra))
-		}
-		return strings.Join(lines, "\n") + "\n"
+		return output
 	}
 
 	// Full format: convert to compact but keep full commit body

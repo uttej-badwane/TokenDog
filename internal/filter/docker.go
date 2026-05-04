@@ -53,7 +53,11 @@ func dockerPS(output string) string {
 		name := fields[len(fields)-1]
 		sb.WriteString(fmt.Sprintf("%-14s  %-30s  %-20s  %s\n", id, image, status, name))
 	}
-	return sb.String()
+	filtered := sb.String()
+	if len(filtered) >= len(output) {
+		return output
+	}
+	return filtered
 }
 
 func dockerImages(output string) string {
@@ -88,5 +92,9 @@ func dockerImages(output string) string {
 		size := fields[len(fields)-1]
 		sb.WriteString(fmt.Sprintf("%-35s  %-15s  %-14s  %s\n", repo, tag, id, size))
 	}
-	return sb.String()
+	filtered := sb.String()
+	if len(filtered) >= len(output) {
+		return output
+	}
+	return filtered
 }
