@@ -83,6 +83,11 @@ That's it. Run `td welcome` again — every checkmark should turn green.
 | `jq` | Lossless JSON compaction (no indentation) | **40–70%** |
 | `curl` | JSON-aware response compression — values preserved | **40–80%** |
 | `kubectl get` / `top` / `describe` | Table compression, blank-line collapse | **20–60%** |
+| `gh pr/issue/run/repo list` | Column-padding normalization, bodies untouched | **30–60%** |
+| `pytest` / `jest` / `vitest` / `go test` / `cargo test` | Collapse to summary on all-pass; verbatim on any failure | **60–95%** |
+| `npm` / `pnpm` / `yarn` / `pip` | Drop fetch/progress noise, keep warnings & errors | **40–80%** |
+| `aws` / `gcloud` / `az` | Lossless JSON compaction, table normalization, YAML blank-line collapse | **30–80%** |
+| `make` | Drop compile spam, keep warnings/errors verbatim | **30–70%** |
 
 ### Tool response interception (PostToolUse hook)
 
@@ -117,6 +122,12 @@ td jq '.items[].name'      # compact jq output
 td curl https://api.example.com/data
 td kubectl get pods
 td kubectl describe deploy myapp
+td gh pr list                 # compact gh tables
+td pytest tests/              # summary on all-pass, verbatim on failure
+td go test ./...              # same strict-mode for go test
+td npm install                # drops fetch/progress lines
+td aws ec2 describe-instances # lossless JSON compaction
+td make                       # drops successful-compile lines
 ```
 
 ### Analytics
@@ -233,6 +244,20 @@ td docker <subcmd>       docker with compact tables
 td jq [args]             jq with compact JSON output
 td curl [args]           curl with JSON-aware response compression
 td kubectl <subcmd>      kubectl get/describe/top with compact output
+td gh <subcmd>           gh with column padding normalized
+td pytest [args]         pytest with all-pass summary collapse
+td jest [args]           jest with all-pass summary collapse
+td vitest [args]         vitest with all-pass summary collapse
+td go test [args]        go test with PASS-line collapse (other go subcmds pass through)
+td cargo <subcmd>        cargo test/build/check with progress stripped
+td npm [args]            npm with fetch/progress noise stripped
+td pnpm [args]           pnpm with fetch/progress noise stripped
+td yarn [args]           yarn with fetch/progress noise stripped
+td pip [args]            pip with download/progress noise stripped
+td aws [args]            aws CLI with JSON/table compaction (lossless)
+td gcloud [args]         gcloud CLI with JSON/YAML/table compaction (lossless)
+td az [args]             az CLI with JSON/table compaction (lossless)
+td make [args]           make with successful-compile lines dropped
 
 # Hook handlers (used by Claude Code, not invoked manually)
 td hook claude           Process PreToolUse hooks (stdin → stdout JSON)

@@ -22,6 +22,20 @@ var supported = map[string]string{
 	"jq":      "jq",
 	"curl":    "curl",
 	"kubectl": "kubectl",
+	"gh":      "gh",
+	"pytest":  "pytest",
+	"jest":    "jest",
+	"vitest":  "vitest",
+	"go":      "go",
+	"cargo":   "cargo",
+	"npm":     "npm",
+	"pnpm":    "pnpm",
+	"yarn":    "yarn",
+	"pip":     "pip",
+	"aws":     "aws",
+	"gcloud":  "gcloud",
+	"az":      "az",
+	"make":    "make",
 }
 
 func ProcessClaude(input ClaudeHookInput) *ClaudeHookOutput {

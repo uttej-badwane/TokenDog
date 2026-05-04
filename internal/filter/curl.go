@@ -3,9 +3,8 @@ package filter
 import "strings"
 
 // Curl compresses curl response output. If the body is JSON, compact it
-// (preserving every key and value — RTK issue #1419 was about silent
-// data mangling, we explicitly avoid that). Otherwise just collapse
-// redundant whitespace.
+// (preserving every key and value — silent data mangling is explicitly
+// avoided). Otherwise just collapse redundant whitespace.
 func Curl(content string) string {
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {

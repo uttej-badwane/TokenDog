@@ -112,6 +112,9 @@ func renderCommands(c *colors) {
 		{"td gain --history", "Recent commands with savings"},
 		{"td discover", "Find unrewritten commands in your Claude history"},
 		{"td git status", "Filtered git status (manual)"},
+		{"td gh pr list", "Compact GitHub PR/issue/run tables"},
+		{"td pytest", "Test runners — strict-mode summary, verbatim on failure"},
+		{"td aws / gcloud / az", "Cloud CLI JSON/table/YAML compaction"},
 		{"td rewrite <cmd>", "Debug: see how a command is rewritten"},
 		{"td --help", "All commands"},
 	}

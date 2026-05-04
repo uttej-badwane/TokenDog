@@ -2,11 +2,10 @@ package filter
 
 import "strings"
 
-// Kubectl compresses kubectl output without dropping any data.
-// We deliberately avoid RTK issue #1466 (aws eks describe-cluster losing
-// critical fields when compressed). For tabular output we collapse
-// whitespace; for describe/get -o yaml output we leave structure intact
-// and only strip excess blank lines.
+// Kubectl compresses kubectl output without dropping any data. For tabular
+// output we collapse whitespace; for describe/get -o yaml output we leave
+// structure intact and only strip excess blank lines. Compressing fields
+// out of describe-cluster style payloads is explicitly avoided.
 func Kubectl(subcommand string, output string) string {
 	switch subcommand {
 	case "get":
