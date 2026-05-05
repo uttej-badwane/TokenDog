@@ -58,6 +58,8 @@ func ProcessClaude(input ClaudeHookInput) *ClaudeHookOutput {
 	if rewritten == cmd {
 		return nil
 	}
+	rewritten = injectSessionEnv(rewritten, input.SessionID, input.TranscriptPath)
+
 	newInput := make(map[string]any, len(input.ToolInput))
 	for k, v := range input.ToolInput {
 		newInput[k] = v
@@ -69,6 +71,66 @@ func ProcessClaude(input ClaudeHookInput) *ClaudeHookOutput {
 			UpdatedInput:  newInput,
 		},
 	}
+}
+
+// injectSessionEnv prepends TD_SESSION_ID + TD_TRANSCRIPT_PATH env-var
+// assignments to the rewritten command so each `td <tool>` exec inherits the
+// session context. Both values are validated for shell-safety; if either
+// would require non-trivial escaping, that field is dropped rather than
+// risking command injection. Empty values are skipped silently.
+//
+// The rewritten form looks like:
+//
+//	TD_SESSION_ID=abc123 TD_TRANSCRIPT_PATH='/path/file.jsonl' td git status
+//
+// IsEnvAssignment + the existing env-prefix-skipping logic in RewriteCommand
+// already handle this shape, so subsequent rewrites (e.g. through bash -c
+// recursion) won't be confused.
+func injectSessionEnv(cmd, sessionID, transcriptPath string) string {
+	prefix := ""
+	if isSafeSessionID(sessionID) {
+		prefix += "TD_SESSION_ID=" + sessionID + " "
+	}
+	if isSafeTranscriptPath(transcriptPath) {
+		prefix += "TD_TRANSCRIPT_PATH='" + transcriptPath + "' "
+	}
+	if prefix == "" {
+		return cmd
+	}
+	return prefix + cmd
+}
+
+// isSafeSessionID accepts UUIDs and similar opaque IDs: alphanumerics,
+// hyphens, underscores. Anything else (newlines, quotes, semicolons) means
+// we drop the env var rather than risk producing a malformed command.
+func isSafeSessionID(s string) bool {
+	if s == "" || len(s) > 128 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		ok := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') || c == '-' || c == '_'
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// isSafeTranscriptPath rejects paths containing single quotes (which would
+// break our single-quote wrapping), newlines, or backslashes. Real Claude
+// transcript paths under ~/.claude/projects/ never contain any of these.
+func isSafeTranscriptPath(s string) bool {
+	if s == "" || len(s) > 4096 {
+		return false
+	}
+	for _, r := range s {
+		if r == '\'' || r == '\n' || r == '\r' || r == '\\' || r == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func RewriteCommand(cmd string) string {

@@ -43,6 +43,42 @@ func TestProcessClaudeSchema(t *testing.T) {
 	}
 }
 
+func TestProcessClaudeInjectsSessionEnv(t *testing.T) {
+	in := ClaudeHookInput{
+		SessionID:      "abc-123-def",
+		TranscriptPath: "/Users/me/.claude/projects/proj/sess.jsonl",
+		ToolName:       "Bash",
+		ToolInput:      map[string]any{"command": "git status"},
+	}
+	out := ProcessClaude(in)
+	if out == nil {
+		t.Fatal("ProcessClaude returned nil")
+	}
+	cmd := out.HookSpecificOutput.UpdatedInput["command"].(string)
+	want := `TD_SESSION_ID=abc-123-def TD_TRANSCRIPT_PATH='/Users/me/.claude/projects/proj/sess.jsonl' td git status`
+	if cmd != want {
+		t.Errorf("rewritten command = %q\nwant %q", cmd, want)
+	}
+}
+
+func TestProcessClaudeRejectsUnsafeSession(t *testing.T) {
+	// A session id containing a shell metachar would corrupt the command —
+	// drop it instead. The rewrite still happens, just without env injection.
+	in := ClaudeHookInput{
+		SessionID: "abc;rm -rf /",
+		ToolName:  "Bash",
+		ToolInput: map[string]any{"command": "git status"},
+	}
+	out := ProcessClaude(in)
+	if out == nil {
+		t.Fatal("ProcessClaude returned nil")
+	}
+	cmd := out.HookSpecificOutput.UpdatedInput["command"].(string)
+	if cmd != "td git status" {
+		t.Errorf("expected unsafe session_id to be dropped, got %q", cmd)
+	}
+}
+
 func TestProcessClaudeNonBash(t *testing.T) {
 	in := ClaudeHookInput{
 		ToolName:  "Read",

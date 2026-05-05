@@ -11,7 +11,19 @@ import (
 	"time"
 
 	"tokendog/internal/tokenizer"
+	"tokendog/internal/transcript"
 )
+
+// Calibrator is the minimal interface RenderGain needs to apply calibration
+// without importing the calibration package (which would be a cycle —
+// calibration depends on analytics for the Record type). Pass nil to render
+// uncalibrated.
+type Calibrator interface {
+	Apply(usd float64) float64
+	Confident() bool
+	EffectiveRatio() float64
+	NumSamples() int
+}
 
 // Per-million-token pricing for Anthropic models (input tier). Update when
 // pricing changes — used for the USD column in `td gain`. Output tokens are
@@ -34,6 +46,8 @@ type Record struct {
 	FilteredTokens int       `json:"filtered_tokens,omitempty"`
 	DurationMs     int64     `json:"duration_ms"`
 	CacheHit       bool      `json:"cache_hit,omitempty"`
+	SessionID      string    `json:"session_id,omitempty"`
+	TranscriptPath string    `json:"transcript_path,omitempty"`
 }
 
 func (r Record) BytesSaved() int { return r.RawBytes - r.FilteredBytes }
@@ -59,9 +73,12 @@ func EstimateTokens(bytes int) int { return (bytes + 3) / 4 }
 
 // NewRecord computes raw + filtered token counts via the real tokenizer and
 // returns a fully-populated Record ready for Save. Bytes are still tracked
-// (cheap, deterministic) but tokens are now the primary metric.
+// (cheap, deterministic) but tokens are now the primary metric. Session
+// fields are read from TD_SESSION_ID + TD_TRANSCRIPT_PATH env vars if set —
+// the hook injects these so each `td <tool>` exec inherits Claude's session
+// context.
 func NewRecord(command string, raw, filtered string, durationMs int64) Record {
-	return Record{
+	r := Record{
 		Command:        command,
 		Timestamp:      time.Now(),
 		RawBytes:       len(raw),
@@ -70,6 +87,8 @@ func NewRecord(command string, raw, filtered string, durationMs int64) Record {
 		FilteredTokens: tokenizer.Count(filtered),
 		DurationMs:     durationMs,
 	}
+	addSessionEnv(&r)
+	return r
 }
 
 // NewCacheHitRecord builds a record for a cache hit. The raw side is what
@@ -77,7 +96,7 @@ func NewRecord(command string, raw, filtered string, durationMs int64) Record {
 // estimated); the filtered side is the short marker actually emitted to the
 // model.
 func NewCacheHitRecord(command string, rawBytes int, marker string) Record {
-	return Record{
+	r := Record{
 		Command:        command,
 		Timestamp:      time.Now(),
 		RawBytes:       rawBytes,
@@ -87,6 +106,13 @@ func NewCacheHitRecord(command string, rawBytes int, marker string) Record {
 		DurationMs:     0,
 		CacheHit:       true,
 	}
+	addSessionEnv(&r)
+	return r
+}
+
+func addSessionEnv(r *Record) {
+	r.SessionID = os.Getenv("TD_SESSION_ID")
+	r.TranscriptPath = os.Getenv("TD_TRANSCRIPT_PATH")
 }
 
 func dataPath() (string, error) {
@@ -228,7 +254,7 @@ func normalizeName(cmd string) string {
 	return cmd
 }
 
-func RenderGain(records []Record, showHistory bool) string {
+func RenderGain(records []Record, showHistory bool, cal Calibrator) string {
 	if len(records) == 0 {
 		return "No data yet. Run td commands to start tracking savings.\n"
 	}
@@ -253,14 +279,27 @@ func RenderGain(records []Record, showHistory bool) string {
 
 	// Cost line — uses real cl100k token counts when available, falls back
 	// to bytes/4 otherwise. Defaults to Opus 4.7 standard pricing; users on
-	// other models can do their own math from the token count.
-	usd := summary.USDSaved(defaultModelPerM)
+	// other models can do their own math from the token count. When the
+	// calibrator has enough samples, the USD figure is multiplied by the
+	// observed Anthropic-vs-cl100k ratio; otherwise the raw cl100k figure
+	// is shown.
+	baseUSD := summary.USDSaved(defaultModelPerM)
 	tokenSrc := "estimated"
 	if tokenizer.Available() && summary.TotalRawTokens > 0 {
 		tokenSrc = "cl100k"
 	}
-	b.WriteString(fmt.Sprintf("%-22s $%.4f at %s ($%.0f/M, tokens via %s)\n",
-		"Cost saved:", usd, defaultModelLabel, defaultModelPerM, tokenSrc))
+	if cal != nil && cal.Confident() {
+		calibratedUSD := cal.Apply(baseUSD)
+		b.WriteString(fmt.Sprintf("%-22s $%.4f at %s (calibrated %.2f× from %d sessions)\n",
+			"Cost saved:", calibratedUSD, defaultModelLabel, cal.EffectiveRatio(), cal.NumSamples()))
+	} else {
+		samplesNote := ""
+		if cal != nil && cal.NumSamples() > 0 {
+			samplesNote = fmt.Sprintf(", %d/3 calibration samples", cal.NumSamples())
+		}
+		b.WriteString(fmt.Sprintf("%-22s $%.4f at %s ($%.0f/M, tokens via %s%s)\n",
+			"Cost saved:", baseUSD, defaultModelLabel, defaultModelPerM, tokenSrc, samplesNote))
+	}
 
 	pct := summary.SavedPct()
 	b.WriteString(fmt.Sprintf("%-22s %s %.1f%%\n\n", "Efficiency:", progressBar(pct, 24), pct))
@@ -314,6 +353,69 @@ func RenderGain(records []Record, showHistory bool) string {
 	}
 
 	return b.String()
+}
+
+// RenderSessionGain renders the per-session view: TD's savings on that
+// session vs. Anthropic's actual token consumption from the transcript.
+// `totals` may be nil if no transcript was reachable (env-var injection
+// disabled, file deleted, etc.) — in that case we show TD-only stats.
+func RenderSessionGain(sessionID string, records []Record, totals *transcript.SessionTotals) string {
+	summary, _ := Summarize(records)
+	var b strings.Builder
+
+	sep60 := strings.Repeat("═", 60)
+	b.WriteString(fmt.Sprintf("TokenDog Savings — session %s\n", shortSessionID(sessionID)))
+	b.WriteString(sep60 + "\n\n")
+
+	b.WriteString(fmt.Sprintf("%-26s %d", "TD-filtered commands:", summary.TotalCommands))
+	if summary.CacheHits > 0 {
+		b.WriteString(fmt.Sprintf(" (%d cache hits)", summary.CacheHits))
+	}
+	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf("%-26s %s (%d tokens via cl100k)\n",
+		"TD bytes saved:", humanBytes(summary.BytesSaved()), summary.TokensSaved()))
+
+	if totals == nil {
+		b.WriteString("\n[transcript unavailable — showing TD-only stats]\n")
+		return b.String()
+	}
+
+	b.WriteString("\nAnthropic-reported usage (from transcript):\n")
+	b.WriteString(fmt.Sprintf("  %-26s %d API calls\n", "Turns:", totals.NumAPICalls))
+	b.WriteString(fmt.Sprintf("  %-26s %d tokens\n", "Uncached input:", totals.InputTokens))
+	b.WriteString(fmt.Sprintf("  %-26s %d tokens\n", "Cache creation:", totals.CacheCreationTokens))
+	b.WriteString(fmt.Sprintf("  %-26s %d tokens\n", "Cache read:", totals.CacheReadTokens))
+	b.WriteString(fmt.Sprintf("  %-26s %d tokens\n", "Output:", totals.OutputTokens))
+	b.WriteString(fmt.Sprintf("  %-26s %d tokens\n", "Total context (no output):", totals.TotalContextTokens))
+
+	// "TD share" — fraction of newly-seen content this session that TD
+	// touched. anthropic_input_new = uncached_input + cache_creation
+	// (excludes cache_read, which is repeat reads of already-counted tokens).
+	anthNew := totals.InputTokens + totals.CacheCreationTokens
+	if anthNew > 0 && summary.TotalRawTokens > 0 {
+		// What fraction of newly-seen content was tool output that TD saw?
+		share := float64(summary.TotalRawTokens) / float64(anthNew) * 100
+		if share > 100 {
+			share = 100
+		}
+		b.WriteString(fmt.Sprintf("\n%-26s %.1f%% of newly-seen tokens were TD-touched tool output\n",
+			"TD share of input:", share))
+	}
+
+	// USD this session — base is cl100k. We don't apply lifetime calibration
+	// here because per-session ratios are too noisy to be useful inline.
+	usd := summary.USDSaved(defaultModelPerM)
+	b.WriteString(fmt.Sprintf("%-26s $%.4f at %s ($%.0f/M, cl100k)\n",
+		"Estimated cost saved:", usd, defaultModelLabel, defaultModelPerM))
+
+	return b.String()
+}
+
+func shortSessionID(id string) string {
+	if len(id) > 12 {
+		return id[:8] + "…"
+	}
+	return id
 }
 
 func progressBar(pct float64, width int) string {
