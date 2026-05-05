@@ -1,14 +1,7 @@
 package cmd
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"strings"
-	"time"
-
 	"github.com/spf13/cobra"
-	"tokendog/internal/analytics"
 	"tokendog/internal/filter"
 )
 
@@ -46,26 +39,7 @@ func runVitest(_ *cobra.Command, args []string) error {
 }
 
 func runTestCommand(binary, runner string, args []string) error {
-	start := time.Now()
-	c := exec.Command(binary, args...)
-	c.Stderr = os.Stderr
-	c.Stdin = os.Stdin
-	out, err := c.Output()
-	elapsed := time.Since(start).Milliseconds()
-
-	raw := string(out)
-	// On error we still want to filter — the filter detects failure signals
-	// and falls back to verbatim output. This keeps savings on flaky-but-
-	// passing cases while never hiding real failures.
-	filtered := filter.Test(runner, raw)
-	fmt.Print(filtered)
-
-	_ = analytics.Save(analytics.Record{
-		Command:       "td " + binary + " " + strings.Join(args, " "),
-		Timestamp:     time.Now(),
-		RawBytes:      len(raw),
-		FilteredBytes: len(filtered),
-		DurationMs:    elapsed,
-	})
-	return err
+	return runFiltered(binary, args, func(raw string) string {
+		return filter.Test(runner, raw)
+	}, "td "+binary+" ")
 }

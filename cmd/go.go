@@ -1,14 +1,11 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
-	"tokendog/internal/analytics"
 	"tokendog/internal/filter"
 )
 
@@ -39,23 +36,7 @@ func runGo(_ *cobra.Command, args []string) error {
 		return c.Run()
 	}
 
-	start := time.Now()
-	c := exec.Command("go", args...)
-	c.Stderr = os.Stderr
-	c.Stdin = os.Stdin
-	out, _ := c.Output()
-	elapsed := time.Since(start).Milliseconds()
-
-	raw := string(out)
-	filtered := filter.Test("go", raw)
-	fmt.Print(filtered)
-
-	_ = analytics.Save(analytics.Record{
-		Command:       "td go " + strings.Join(args, " "),
-		Timestamp:     time.Now(),
-		RawBytes:      len(raw),
-		FilteredBytes: len(filtered),
-		DurationMs:    elapsed,
-	})
-	return nil
+	return runFiltered("go", args, func(raw string) string {
+		return filter.Test("go", raw)
+	}, "td go ")
 }

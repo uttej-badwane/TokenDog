@@ -1,14 +1,7 @@
 package cmd
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"strings"
-	"time"
-
 	"github.com/spf13/cobra"
-	"tokendog/internal/analytics"
 	"tokendog/internal/filter"
 )
 
@@ -21,29 +14,7 @@ var dockerCmd = &cobra.Command{
 
 func runDocker(_ *cobra.Command, args []string) error {
 	subcmd := extractSubcommand(args, dockerValueFlags)
-
-	start := time.Now()
-	c := exec.Command("docker", args...)
-	c.Stderr = os.Stderr
-	c.Stdin = os.Stdin
-	out, err := c.Output()
-	elapsed := time.Since(start).Milliseconds()
-
-	if err != nil {
-		fmt.Print(string(out))
-		return err
-	}
-
-	raw := string(out)
-	filtered := filter.Docker(subcmd, raw)
-	fmt.Print(filtered)
-
-	_ = analytics.Save(analytics.Record{
-		Command:       "td docker " + strings.Join(args, " "),
-		Timestamp:     time.Now(),
-		RawBytes:      len(raw),
-		FilteredBytes: len(filtered),
-		DurationMs:    elapsed,
-	})
-	return nil
+	return runFiltered("docker", args, func(raw string) string {
+		return filter.Docker(subcmd, raw)
+	}, "td docker ")
 }

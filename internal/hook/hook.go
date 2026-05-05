@@ -76,6 +76,16 @@ func RewriteCommand(cmd string) string {
 	if strings.HasPrefix(cmd, "td ") || strings.HasPrefix(cmd, "tokendog ") {
 		return cmd
 	}
+
+	// `bash -c "<inner>"` / `sh -c '<inner>'` / `zsh -c <inner>` — Claude
+	// often wraps complex pipelines this way. Rewriting the outer `bash`
+	// would be a no-op (we don't filter bash itself), so unwrap the inner
+	// command, rewrite it, and re-quote. If the inner command is itself
+	// unrewritable, the result is identical to the input.
+	if rewritten, ok := rewriteShellC(cmd); ok {
+		return rewritten
+	}
+
 	parts := strings.Fields(cmd)
 	if len(parts) == 0 {
 		return cmd
@@ -111,6 +121,120 @@ func RewriteCommand(cmd string) string {
 		out = out + " " + rest
 	}
 	return out
+}
+
+// rewriteShellC detects `<shell> -c <inner>` and rewrites the inner command,
+// preserving the original quoting style. Returns (rewritten, true) on a
+// successful rewrite, (cmd, false) otherwise. We handle the three common
+// shells (bash/sh/zsh) that Claude Code might emit.
+func rewriteShellC(cmd string) (string, bool) {
+	var shell string
+	for _, s := range []string{"bash", "sh", "zsh"} {
+		if strings.HasPrefix(cmd, s+" -c ") || strings.HasPrefix(cmd, s+" -lc ") || strings.HasPrefix(cmd, s+" -ic ") {
+			shell = s
+			break
+		}
+	}
+	if shell == "" {
+		return cmd, false
+	}
+
+	// Find the start of the inner string — skip past the shell binary, all
+	// short flags ending in `c`, and any whitespace.
+	rest := strings.TrimSpace(strings.TrimPrefix(cmd, shell))
+	flag := ""
+	for _, candidate := range []string{"-lc", "-ic", "-c"} {
+		if strings.HasPrefix(rest, candidate+" ") {
+			flag = candidate
+			rest = strings.TrimSpace(strings.TrimPrefix(rest, candidate))
+			break
+		}
+	}
+	if flag == "" {
+		return cmd, false
+	}
+
+	inner, quote, trailing, ok := unquoteShellArg(rest)
+	if !ok {
+		return cmd, false
+	}
+
+	rewritten := RewriteCommand(inner)
+	if rewritten == inner {
+		return cmd, false
+	}
+
+	// Re-quote using the original style. If the rewritten content contains
+	// the original quote char (rare — only happens with embedded quotes),
+	// fall through to no-rewrite to avoid producing a syntactically broken
+	// command. The user gets the unrewritten passthrough; correctness wins
+	// over savings.
+	if quote != 0 && strings.ContainsRune(rewritten, quote) {
+		return cmd, false
+	}
+
+	var quoted string
+	switch quote {
+	case '\'':
+		quoted = "'" + rewritten + "'"
+	case '"':
+		quoted = "\"" + rewritten + "\""
+	default:
+		// No quotes in original — preserve that, but only if the rewritten
+		// command has no spaces that would change argv. It almost always
+		// does (`td git status`), so quote it defensively with single quotes.
+		quoted = "'" + rewritten + "'"
+	}
+
+	out := shell + " " + flag + " " + quoted
+	if trailing != "" {
+		out += " " + trailing
+	}
+	return out, true
+}
+
+// unquoteShellArg parses the leading shell-quoted argument from s and returns
+// (content, quote-rune, trailing, ok). The quote-rune is 0 if the argument
+// was unquoted. trailing is anything after the parsed argument (extra args
+// to the shell, e.g. `bash -c 'cmd' arg0 arg1`). Handles `'...'` and `"..."`
+// with backslash escapes for double quotes only — single quotes are literal
+// in POSIX shells. Returns ok=false on malformed/unterminated quoting.
+func unquoteShellArg(s string) (string, rune, string, bool) {
+	if s == "" {
+		return "", 0, "", false
+	}
+	first := rune(s[0])
+	if first != '\'' && first != '"' {
+		// Unquoted: take the first whitespace-delimited token.
+		idx := strings.IndexAny(s, " \t")
+		if idx < 0 {
+			return s, 0, "", true
+		}
+		return s[:idx], 0, strings.TrimSpace(s[idx:]), true
+	}
+
+	var b strings.Builder
+	i := 1
+	for i < len(s) {
+		c := s[i]
+		if rune(c) == first {
+			// End of quoted region.
+			trailing := strings.TrimSpace(s[i+1:])
+			return b.String(), first, trailing, true
+		}
+		if first == '"' && c == '\\' && i+1 < len(s) {
+			next := s[i+1]
+			if next == '"' || next == '\\' || next == '$' || next == '`' {
+				b.WriteByte(next)
+				i += 2
+				continue
+			}
+		}
+		b.WriteByte(c)
+		i++
+	}
+	// Unterminated quote.
+	return "", 0, "", false
 }
 
 // IsEnvAssignment reports whether s is a shell env-var assignment of the

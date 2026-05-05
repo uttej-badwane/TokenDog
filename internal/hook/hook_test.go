@@ -101,6 +101,16 @@ func TestRewriteCommand(t *testing.T) {
 		{"env-var only — no command", "FOO=bar", "FOO=bar"},
 		{"env-var unsupported binary", "FOO=bar grep pattern", "FOO=bar grep pattern"},
 		{"binary with no args", "git", "td git"},
+		{"bash -c double-quoted", `bash -c "git status"`, `bash -c "td git status"`},
+		{"bash -c single-quoted", `bash -c 'git status'`, `bash -c 'td git status'`},
+		{"sh -c", `sh -c "ls /tmp"`, `sh -c "td ls /tmp"`},
+		{"zsh -c", `zsh -c "find ."`, `zsh -c "td find ."`},
+		{"bash -lc login flag", `bash -lc "git log -5"`, `bash -lc "td git log -5"`},
+		{"bash -c unsupported binary", `bash -c "echo hi"`, `bash -c "echo hi"`},
+		{"bash -c with env-var prefix", `bash -c "AWS_PROFILE=foo aws ec2 describe-instances"`, `bash -c "AWS_PROFILE=foo td aws ec2 describe-instances"`},
+		{"bash -c unterminated quote", `bash -c "git status`, `bash -c "git status`},
+		{"bash without -c", `bash script.sh`, `bash script.sh`},
+		{"bash -c with embedded quotes — pass through", `bash -c "echo 'hi' && git status"`, `bash -c "echo 'hi' && git status"`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

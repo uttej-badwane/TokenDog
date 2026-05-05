@@ -1,14 +1,10 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
-	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
-	"tokendog/internal/analytics"
 	"tokendog/internal/filter"
 )
 
@@ -36,29 +32,4 @@ func runCargo(_ *cobra.Command, args []string) error {
 		c.Stdin = os.Stdin
 		return c.Run()
 	}
-}
-
-// runFiltered is a generic exec helper used by package-manager / test-style
-// wrappers — captures stdout, applies a filter, prints filtered output, and
-// records analytics. Stderr streams through live so progress is visible.
-func runFiltered(binary string, args []string, fn func(string) string, recordPrefix string) error {
-	start := time.Now()
-	c := exec.Command(binary, args...)
-	c.Stderr = os.Stderr
-	c.Stdin = os.Stdin
-	out, err := c.Output()
-	elapsed := time.Since(start).Milliseconds()
-
-	raw := string(out)
-	filtered := fn(raw)
-	fmt.Print(filtered)
-
-	_ = analytics.Save(analytics.Record{
-		Command:       recordPrefix + strings.Join(args, " "),
-		Timestamp:     time.Now(),
-		RawBytes:      len(raw),
-		FilteredBytes: len(filtered),
-		DurationMs:    elapsed,
-	})
-	return err
 }

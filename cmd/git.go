@@ -1,14 +1,7 @@
 package cmd
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"strings"
-	"time"
-
 	"github.com/spf13/cobra"
-	"tokendog/internal/analytics"
 	"tokendog/internal/filter"
 )
 
@@ -21,31 +14,7 @@ var gitCmd = &cobra.Command{
 
 func runGit(_ *cobra.Command, args []string) error {
 	subcmd := extractSubcommand(args, gitValueFlags)
-
-	start := time.Now()
-	c := exec.Command("git", args...)
-	c.Stderr = os.Stderr
-	c.Stdin = os.Stdin
-	out, err := c.Output()
-	elapsed := time.Since(start).Milliseconds()
-
-	if err != nil {
-		if len(out) > 0 {
-			fmt.Print(string(out))
-		}
-		return err
-	}
-
-	raw := string(out)
-	filtered := filter.Git(subcmd, raw)
-	fmt.Print(filtered)
-
-	_ = analytics.Save(analytics.Record{
-		Command:       "td git " + strings.Join(args, " "),
-		Timestamp:     time.Now(),
-		RawBytes:      len(raw),
-		FilteredBytes: len(filtered),
-		DurationMs:    elapsed,
-	})
-	return nil
+	return runFiltered("git", args, func(raw string) string {
+		return filter.Git(subcmd, raw)
+	}, "td git ")
 }
