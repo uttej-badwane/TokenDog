@@ -30,6 +30,8 @@ type SessionTotals struct {
 	LastTimestamp       time.Time
 	NumAPICalls         int
 	Path                string
+	PredominantModel    string         // model with the most API calls in this session
+	ModelCounts         map[string]int // per-model API call count (for sessions that switch)
 }
 
 // line mirrors the shape ccstatusline parses with Zod. Fields we don't read
@@ -41,6 +43,7 @@ type line struct {
 	IsSidechain       bool   `json:"isSidechain"`
 	IsAPIErrorMessage bool   `json:"isApiErrorMessage"`
 	Message           *struct {
+		Model      string  `json:"model"`
 		StopReason *string `json:"stop_reason"`
 		Usage      *struct {
 			InputTokens              int `json:"input_tokens"`
@@ -99,7 +102,7 @@ func Read(path string) (*SessionTotals, error) {
 		counted = entries
 	}
 
-	t := &SessionTotals{Path: path}
+	t := &SessionTotals{Path: path, ModelCounts: map[string]int{}}
 	for _, e := range counted {
 		u := e.Message.Usage
 		t.InputTokens += u.InputTokens
@@ -109,6 +112,9 @@ func Read(path string) (*SessionTotals, error) {
 		t.NumAPICalls++
 		if t.SessionID == "" && e.SessionID != "" {
 			t.SessionID = e.SessionID
+		}
+		if e.Message.Model != "" {
+			t.ModelCounts[e.Message.Model]++
 		}
 		if !e.IsSidechain && !e.IsAPIErrorMessage && e.Timestamp != "" {
 			if ts, err := time.Parse(time.RFC3339Nano, e.Timestamp); err == nil {
@@ -120,5 +126,20 @@ func Read(path string) (*SessionTotals, error) {
 	}
 	t.TotalConsumedTokens = t.InputTokens + t.OutputTokens + t.CacheCreationTokens + t.CacheReadTokens
 	t.TotalContextTokens = t.InputTokens + t.CacheCreationTokens + t.CacheReadTokens
+	t.PredominantModel = predominant(t.ModelCounts)
 	return t, nil
+}
+
+// predominant returns the model with the highest API-call count, or "" if
+// the map is empty. Tie-breaks by lex order so output is deterministic.
+func predominant(counts map[string]int) string {
+	best := ""
+	bestN := 0
+	for m, n := range counts {
+		if n > bestN || (n == bestN && m < best) {
+			best = m
+			bestN = n
+		}
+	}
+	return best
 }

@@ -92,6 +92,27 @@ func TestSkipsRowsWithoutUsage(t *testing.T) {
 	}
 }
 
+func TestPredominantModel(t *testing.T) {
+	lines := []string{
+		`{"type":"assistant","sessionId":"x","timestamp":"2026-05-05T10:00:00Z","message":{"model":"claude-opus-4-7","stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":50}}}`,
+		`{"type":"assistant","sessionId":"x","timestamp":"2026-05-05T10:01:00Z","message":{"model":"claude-haiku-4-5","stop_reason":"end_turn","usage":{"input_tokens":50,"output_tokens":20}}}`,
+		`{"type":"assistant","sessionId":"x","timestamp":"2026-05-05T10:02:00Z","message":{"model":"claude-opus-4-7","stop_reason":"end_turn","usage":{"input_tokens":80,"output_tokens":30}}}`,
+	}
+	totals, err := Read(writeTranscript(t, lines))
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if totals.PredominantModel != "claude-opus-4-7" {
+		t.Errorf("PredominantModel = %q, want claude-opus-4-7 (2 calls vs haiku 1)", totals.PredominantModel)
+	}
+	if totals.ModelCounts["claude-opus-4-7"] != 2 {
+		t.Errorf("ModelCounts[opus] = %d, want 2", totals.ModelCounts["claude-opus-4-7"])
+	}
+	if totals.ModelCounts["claude-haiku-4-5"] != 1 {
+		t.Errorf("ModelCounts[haiku] = %d, want 1", totals.ModelCounts["claude-haiku-4-5"])
+	}
+}
+
 func TestMissingFile(t *testing.T) {
 	if _, err := Read("/nonexistent/path/sess.jsonl"); err == nil {
 		t.Error("expected error for missing file")

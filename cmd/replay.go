@@ -19,6 +19,7 @@ var (
 	replayMaxSessions int
 	replayTopN        int
 	replayPriceM      float64
+	replayJSON        bool
 )
 
 var replayCmd = &cobra.Command{
@@ -38,6 +39,7 @@ func init() {
 	replayCmd.Flags().IntVar(&replayMaxSessions, "max-sessions", 0, "Cap on number of sessions to replay (newest first; 0 = no cap)")
 	replayCmd.Flags().IntVar(&replayTopN, "top", 15, "How many top commands to show in the breakdown")
 	replayCmd.Flags().Float64Var(&replayPriceM, "price-per-million", 15.0, "$ per million input tokens (Opus 4.7 standard = 15)")
+	replayCmd.Flags().BoolVar(&replayJSON, "json", false, "Emit JSON instead of the human-readable table")
 }
 
 func runReplay(_ *cobra.Command, _ []string) error {
@@ -59,6 +61,24 @@ func runReplay(_ *cobra.Command, _ []string) error {
 	r, err := replay.Walk(root, dispatchReplay, opts)
 	if err != nil {
 		return err
+	}
+	if replayJSON {
+		return emitJSON(map[string]any{
+			"sessions_scanned":   r.SessionsScanned,
+			"bash_calls_seen":    r.BashCallsSeen,
+			"bash_calls_handled": r.BashCallsHandled,
+			"raw_bytes":          r.RawBytes,
+			"filtered_bytes":     r.FilteredBytes,
+			"raw_tokens":         r.RawTokens,
+			"filtered_tokens":    r.FilteredTokens,
+			"tokens_saved":       r.TokensSaved(),
+			"saved_pct":          r.SavedPct(),
+			"projected_usd":      float64(r.TokensSaved()) / 1_000_000 * replayPriceM,
+			"price_per_million":  replayPriceM,
+			"per_command":        r.PerCommand,
+			"per_session":        r.PerSession,
+			"unhandled_top":      r.UnhandledTopN,
+		})
 	}
 	fmt.Print(renderReplay(r, replayTopN, replayPriceM))
 	return nil

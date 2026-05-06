@@ -10,32 +10,18 @@ import (
 	"strings"
 	"time"
 
+	"tokendog/internal/pricing"
 	"tokendog/internal/tokenizer"
 	"tokendog/internal/transcript"
 )
 
-// Calibrator is the minimal interface RenderGain needs to apply calibration
-// without importing the calibration package (which would be a cycle —
-// calibration depends on analytics for the Record type). Pass nil to render
-// uncalibrated.
-type Calibrator interface {
-	Apply(usd float64) float64
-	Confident() bool
-	EffectiveRatio() float64
-	NumSamples() int
-}
-
-// Per-million-token pricing for Anthropic models (input tier). Update when
-// pricing changes — used for the USD column in `td gain`. Output tokens are
-// not relevant: tool output is fed back to the model as input.
-const (
-	priceOpus47PerM   = 15.0 // $/M input tokens, standard 200K context
-	priceSonnet46PerM = 3.0
-	priceHaiku45PerM  = 0.80
-	priceOpus471MPerM = 30.0 // 1M context premium tier (>200K input)
-	defaultModelPerM  = priceOpus47PerM
-	defaultModelLabel = "Opus 4.7"
-)
+// All cost math now lives in internal/pricing — RenderGain reads the
+// per-model rate via Summary.ByModel rather than a hardcoded constant.
+// The Calibrator interface from earlier versions has been removed; the
+// session-input multiplier it computed produced misleading USD figures
+// (it measured session-token-density, not tokenizer accuracy). The
+// internal/calibration package is retained as a diagnostic only and is
+// not auto-applied to the headline number.
 
 type Record struct {
 	Command        string    `json:"command"`
@@ -48,6 +34,11 @@ type Record struct {
 	CacheHit       bool      `json:"cache_hit,omitempty"`
 	SessionID      string    `json:"session_id,omitempty"`
 	TranscriptPath string    `json:"transcript_path,omitempty"`
+	// Model is populated lazily at gain/replay time by reading the
+	// transcript at TranscriptPath and taking PredominantModel. Stored
+	// when first resolved so the same lookup isn't repeated. Empty for
+	// records whose transcript was unreachable.
+	Model string `json:"model,omitempty"`
 }
 
 func (r Record) BytesSaved() int { return r.RawBytes - r.FilteredBytes }
@@ -115,6 +106,37 @@ func addSessionEnv(r *Record) {
 	r.TranscriptPath = os.Getenv("TD_TRANSCRIPT_PATH")
 }
 
+// ResolveModels populates r.Model in-place for any records that have a
+// SessionID + TranscriptPath but no Model yet. Reads each transcript once
+// (cached by SessionID) and uses PredominantModel. Records that already
+// carry a Model are left alone. Errors per-transcript are silent — the
+// record stays Model="" and is bucketed as "unknown" downstream.
+//
+// This is called at gain/replay time, NOT at live exec — populating Model
+// during the hook would require reading the transcript on every Bash call,
+// which is too slow.
+func ResolveModels(records []Record) {
+	cache := map[string]string{}
+	for i := range records {
+		r := &records[i]
+		if r.Model != "" || r.SessionID == "" || r.TranscriptPath == "" {
+			continue
+		}
+		if m, ok := cache[r.SessionID]; ok {
+			r.Model = m
+			continue
+		}
+		t, err := transcript.Read(r.TranscriptPath)
+		if err != nil {
+			cache[r.SessionID] = "" // negative cache so we don't retry
+			continue
+		}
+		m := t.PredominantModel
+		cache[r.SessionID] = m
+		r.Model = m
+	}
+}
+
 func dataPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -174,15 +196,34 @@ type Summary struct {
 	TotalTokensSaved    int // pre-aggregated per-record (handles mixed legacy + tokenized history)
 	TotalDurationMs     int64
 	CacheHits           int
+	ByModel             map[string]*ModelStat // per-model aggregation, populated by Summarize
+}
+
+// ModelStat holds per-model totals for the breakdown view. The Model name
+// is the canonical id matching pricing.Lookup; empty means "unknown" (no
+// transcript was reachable to resolve it).
+type ModelStat struct {
+	Model       string
+	Commands    int
+	TokensSaved int
+	BytesSaved  int
+	USDSaved    float64 // computed using pricing.Lookup at render time
+	IsImputed   bool    // true when pricing fell back to default
 }
 
 func (s Summary) BytesSaved() int  { return s.TotalRawBytes - s.TotalFilteredBytes }
 func (s Summary) TokensSaved() int { return s.TotalTokensSaved }
 
-// USDSaved returns dollar savings at the given $/M input-token price. The
-// caller picks the model price (Opus, Sonnet, etc.).
-func (s Summary) USDSaved(pricePerM float64) float64 {
-	return float64(s.TokensSaved()) / 1_000_000 * pricePerM
+// USDSaved sums per-model USD savings using each model's actual input rate
+// (resolved via internal/pricing). Records with no resolved model land in
+// the "unknown" bucket which is priced at DefaultModel as a conservative
+// upper bound.
+func (s Summary) USDSaved() float64 {
+	total := 0.0
+	for _, ms := range s.ByModel {
+		total += ms.USDSaved
+	}
+	return total
 }
 
 func (s Summary) SavedPct() float64 {
@@ -203,6 +244,7 @@ type CommandStat struct {
 
 func Summarize(records []Record) (Summary, []CommandStat) {
 	var s Summary
+	s.ByModel = map[string]*ModelStat{}
 	byCmd := map[string]*CommandStat{}
 
 	for _, r := range records {
@@ -214,11 +256,33 @@ func Summarize(records []Record) (Summary, []CommandStat) {
 		// Per-record tokens-saved falls back to bytes/4 for legacy records
 		// that predate the tokenizer. Aggregating per-record correctly
 		// handles mixed history; a global fallback would double-count.
-		s.TotalTokensSaved += r.TokensSaved()
+		ts := r.TokensSaved()
+		s.TotalTokensSaved += ts
 		s.TotalDurationMs += r.DurationMs
 		if r.CacheHit {
 			s.CacheHits++
 		}
+
+		// Per-model bucket. Empty model goes into "unknown" so the row
+		// shows up in --by-model as a distinct category rather than
+		// silently merging into the default-priced bucket.
+		modelKey := r.Model
+		if modelKey == "" {
+			modelKey = "unknown"
+		}
+		ms, ok := s.ByModel[modelKey]
+		if !ok {
+			rate, hit := pricing.Lookup(modelKey)
+			ms = &ModelStat{Model: rate.Model, IsImputed: !hit}
+			if modelKey == "unknown" {
+				ms.Model = "unknown"
+				ms.IsImputed = true
+			}
+			s.ByModel[modelKey] = ms
+		}
+		ms.Commands++
+		ms.TokensSaved += ts
+		ms.BytesSaved += r.BytesSaved()
 
 		name := normalizeName(r.Command)
 		cs, ok := byCmd[name]
@@ -228,9 +292,20 @@ func Summarize(records []Record) (Summary, []CommandStat) {
 		}
 		cs.Count++
 		cs.Saved += r.BytesSaved()
-		cs.TokensSaved += r.TokensSaved()
+		cs.TokensSaved += ts
 		cs.AvgPct = (cs.AvgPct*float64(cs.Count-1) + r.SavedPct()) / float64(cs.Count)
 		cs.AvgMs = (cs.AvgMs*int64(cs.Count-1) + r.DurationMs) / int64(cs.Count)
+	}
+
+	// Compute per-model USD using each model's input rate. unknown buckets
+	// use the DefaultModel rate but stay flagged as imputed.
+	for _, ms := range s.ByModel {
+		key := ms.Model
+		if key == "unknown" {
+			key = pricing.DefaultModel
+		}
+		rate, _ := pricing.Lookup(key)
+		ms.USDSaved = rate.USDForInput(ms.TokensSaved)
 	}
 
 	stats := make([]CommandStat, 0, len(byCmd))
@@ -254,7 +329,7 @@ func normalizeName(cmd string) string {
 	return cmd
 }
 
-func RenderGain(records []Record, showHistory bool, cal Calibrator) string {
+func RenderGain(records []Record, showHistory bool) string {
 	if len(records) == 0 {
 		return "No data yet. Run td commands to start tracking savings.\n"
 	}
@@ -277,29 +352,30 @@ func RenderGain(records []Record, showHistory bool, cal Calibrator) string {
 	b.WriteString(fmt.Sprintf("%-22s %s (%d tokens, %.1f%%)\n",
 		"Saved:", humanBytes(summary.BytesSaved()), summary.TokensSaved(), summary.SavedPct()))
 
-	// Cost line — uses real cl100k token counts when available, falls back
-	// to bytes/4 otherwise. Defaults to Opus 4.7 standard pricing; users on
-	// other models can do their own math from the token count. When the
-	// calibrator has enough samples, the USD figure is multiplied by the
-	// observed Anthropic-vs-cl100k ratio; otherwise the raw cl100k figure
-	// is shown.
-	baseUSD := summary.USDSaved(defaultModelPerM)
+	// Cost line — sums per-model USD using each model's actual rate
+	// (resolved at NewRecord time from the transcript). Records without a
+	// resolved model fall into the "unknown" bucket priced at DefaultModel
+	// (Opus 4.7), which over-estimates rather than under — the savings
+	// figure is conservative-low when honest.
 	tokenSrc := "estimated"
 	if tokenizer.Available() && summary.TotalRawTokens > 0 {
 		tokenSrc = "cl100k"
 	}
-	if cal != nil && cal.Confident() {
-		calibratedUSD := cal.Apply(baseUSD)
-		b.WriteString(fmt.Sprintf("%-22s $%.4f at %s (calibrated %.2f× from %d sessions)\n",
-			"Cost saved:", calibratedUSD, defaultModelLabel, cal.EffectiveRatio(), cal.NumSamples()))
-	} else {
-		samplesNote := ""
-		if cal != nil && cal.NumSamples() > 0 {
-			samplesNote = fmt.Sprintf(", %d/3 calibration samples", cal.NumSamples())
+	totalUSD := 0.0
+	imputedTokens := 0
+	for _, ms := range summary.ByModel {
+		totalUSD += ms.USDSaved
+		if ms.IsImputed {
+			imputedTokens += ms.TokensSaved
 		}
-		b.WriteString(fmt.Sprintf("%-22s $%.4f at %s ($%.0f/M, tokens via %s%s)\n",
-			"Cost saved:", baseUSD, defaultModelLabel, defaultModelPerM, tokenSrc, samplesNote))
 	}
+	imputedNote := ""
+	if imputedTokens > 0 && summary.TokensSaved() > 0 {
+		pctImputed := float64(imputedTokens) / float64(summary.TokensSaved()) * 100
+		imputedNote = fmt.Sprintf(", %.0f%% priced at default-model fallback", pctImputed)
+	}
+	b.WriteString(fmt.Sprintf("%-22s $%.4f (per-model rates, tokens via %s%s)\n",
+		"Cost saved:", totalUSD, tokenSrc, imputedNote))
 
 	pct := summary.SavedPct()
 	b.WriteString(fmt.Sprintf("%-22s %s %.1f%%\n\n", "Efficiency:", progressBar(pct, 24), pct))
@@ -402,13 +478,154 @@ func RenderSessionGain(sessionID string, records []Record, totals *transcript.Se
 			"TD share of input:", share))
 	}
 
-	// USD this session — base is cl100k. We don't apply lifetime calibration
-	// here because per-session ratios are too noisy to be useful inline.
-	usd := summary.USDSaved(defaultModelPerM)
-	b.WriteString(fmt.Sprintf("%-26s $%.4f at %s ($%.0f/M, cl100k)\n",
-		"Estimated cost saved:", usd, defaultModelLabel, defaultModelPerM))
+	// USD this session — uses per-model rates from Summary.ByModel. When
+	// the predominant model isn't resolvable, falls into the "unknown"
+	// bucket priced at DefaultModel as a conservative upper bound.
+	usd := summary.USDSaved()
+	model := pricing.DefaultModel
+	if totals.PredominantModel != "" {
+		model = totals.PredominantModel
+	}
+	b.WriteString(fmt.Sprintf("%-26s $%.4f at %s (cl100k)\n",
+		"Estimated cost saved:", usd, model))
 
 	return b.String()
+}
+
+// RenderByModel produces a per-model breakdown table. Designed to compose
+// under the standard RenderGain output — the headline summary already shows
+// blended cost; this section reveals the model mix behind that number.
+func RenderByModel(records []Record) string {
+	summary, _ := Summarize(records)
+	if len(summary.ByModel) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	dash := strings.Repeat("─", 72)
+	b.WriteString("\nBy Model\n")
+	b.WriteString(dash + "\n")
+	b.WriteString(fmt.Sprintf("  %-22s  %-8s  %-12s  %-10s  %s\n",
+		"Model", "Calls", "Tokens saved", "$ saved", "Note"))
+	b.WriteString(dash + "\n")
+
+	type row struct {
+		ms *ModelStat
+	}
+	rows := make([]row, 0, len(summary.ByModel))
+	for _, ms := range summary.ByModel {
+		rows = append(rows, row{ms: ms})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].ms.USDSaved > rows[j].ms.USDSaved
+	})
+	for _, r := range rows {
+		note := ""
+		if r.ms.IsImputed {
+			note = "imputed price"
+		}
+		b.WriteString(fmt.Sprintf("  %-22s  %-8d  %-12d  $%-9.4f  %s\n",
+			r.ms.Model, r.ms.Commands, r.ms.TokensSaved, r.ms.USDSaved, note))
+	}
+	b.WriteString(dash + "\n")
+	return b.String()
+}
+
+// TimeBucket is a single row in a daily/monthly aggregation.
+type TimeBucket struct {
+	Period      string         `json:"period"` // "2026-05-05" or "2026-05"
+	Commands    int            `json:"commands"`
+	TokensSaved int            `json:"tokens_saved"`
+	BytesSaved  int            `json:"bytes_saved"`
+	USDSaved    float64        `json:"usd_saved"`
+	ByModel     map[string]int `json:"by_model,omitempty"` // model → tokens saved
+}
+
+// TimeSeriesData groups records by day or month. ByModel sub-bucketing is
+// included only when the caller asks for it (avoids noise in default JSON).
+func TimeSeriesData(records []Record, monthly, byModel bool) []TimeBucket {
+	buckets := map[string]*TimeBucket{}
+	for _, r := range records {
+		key := r.Timestamp.UTC().Format("2006-01-02")
+		if monthly {
+			key = r.Timestamp.UTC().Format("2006-01")
+		}
+		b, ok := buckets[key]
+		if !ok {
+			b = &TimeBucket{Period: key}
+			if byModel {
+				b.ByModel = map[string]int{}
+			}
+			buckets[key] = b
+		}
+		ts := r.TokensSaved()
+		b.Commands++
+		b.TokensSaved += ts
+		b.BytesSaved += r.BytesSaved()
+		modelKey := r.Model
+		if modelKey == "" {
+			modelKey = "unknown"
+		}
+		// Pricing per record; sums correctly when sessions mix models.
+		priceModel := modelKey
+		if priceModel == "unknown" {
+			priceModel = pricing.DefaultModel
+		}
+		rate, _ := pricing.Lookup(priceModel)
+		b.USDSaved += rate.USDForInput(ts)
+		if byModel {
+			b.ByModel[modelKey] += ts
+		}
+	}
+	out := make([]TimeBucket, 0, len(buckets))
+	for _, b := range buckets {
+		out = append(out, *b)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Period < out[j].Period
+	})
+	return out
+}
+
+// RenderTimeSeries formats a daily/monthly breakdown as a human-readable
+// table. byModel adds a second-row "(model: N tokens)" annotation for each
+// period — kept off by default to avoid screen-overload on long histories.
+func RenderTimeSeries(records []Record, monthly, byModel bool) string {
+	series := TimeSeriesData(records, monthly, byModel)
+	if len(series) == 0 {
+		return "No data in the requested date range.\n"
+	}
+	var b strings.Builder
+	dash := strings.Repeat("─", 72)
+	header := "Daily breakdown"
+	if monthly {
+		header = "Monthly breakdown"
+	}
+	b.WriteString(header + "\n")
+	b.WriteString(dash + "\n")
+	b.WriteString(fmt.Sprintf("  %-12s  %-8s  %-14s  %-10s  %s\n",
+		"Period", "Calls", "Tokens saved", "$ saved", "Models"))
+	b.WriteString(dash + "\n")
+	for _, bk := range series {
+		modelMix := ""
+		if byModel && len(bk.ByModel) > 0 {
+			parts := make([]string, 0, len(bk.ByModel))
+			for m, n := range bk.ByModel {
+				parts = append(parts, fmt.Sprintf("%s:%d", shortModel(m), n))
+			}
+			sort.Strings(parts)
+			modelMix = strings.Join(parts, " ")
+		}
+		b.WriteString(fmt.Sprintf("  %-12s  %-8d  %-14d  $%-9.4f  %s\n",
+			bk.Period, bk.Commands, bk.TokensSaved, bk.USDSaved, modelMix))
+	}
+	b.WriteString(dash + "\n")
+	return b.String()
+}
+
+// shortModel collapses a verbose model id into something compact for the
+// table-header byline (e.g. "claude-opus-4-7" → "opus-4-7").
+func shortModel(m string) string {
+	return strings.TrimPrefix(m, "claude-")
 }
 
 func shortSessionID(id string) string {
