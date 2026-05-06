@@ -40,6 +40,13 @@ func parseLsLine(line string) (string, bool) {
 		return line, false
 	}
 	perms := fields[0]
+	// `ls -l` permission strings are always exactly 10 chars (`-rwxr-xr-x`,
+	// optionally with a trailing `+`/`@` ACL marker pushing to 11). Anything
+	// else means this isn't `-l` output — likely plain `ls` whose output
+	// happens to have 9+ space-delimited filenames per line. Pass through.
+	if !looksLikePerms(perms) {
+		return line, false
+	}
 	size := fields[4]
 	name := strings.Join(fields[8:], " ")
 
@@ -68,6 +75,19 @@ func parseLsLine(line string) (string, bool) {
 	}
 
 	return fmt.Sprintf("%-30s%s", name+marker, sizeStr), isDir
+}
+
+// looksLikePerms reports whether s could plausibly be an `ls -l` permission
+// string: 10 chars (or 11 with ACL marker), starting with a file-type char.
+func looksLikePerms(s string) bool {
+	if len(s) < 10 || len(s) > 11 {
+		return false
+	}
+	switch s[0] {
+	case '-', 'd', 'l', 'b', 'c', 's', 'p':
+		return true
+	}
+	return false
 }
 
 func humanSizeStr(s string) string {

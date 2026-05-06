@@ -32,6 +32,25 @@ drwxr-xr-x 10 user staff  320 May  4 11:14 ..
 	}
 }
 
+// TestLsNonLongFormatPassthrough is the regression test for v0.5.0's
+// "ls panic on plain ls output" bug. `td replay` fed historical plain `ls`
+// output (no -l) into the filter; lines with 9+ filenames separated by
+// spaces tripped the field-count heuristic and panicked at perms[3:]. The
+// fix: if fields[0] doesn't look like a 10-char permission string, treat
+// the whole input as not-long-format and pass through unchanged.
+func TestLsNonLongFormatPassthrough(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Ls panicked on plain `ls` output: %v", r)
+		}
+	}()
+	in := "a b c d e f g h i j k l\nfoo bar baz qux quux corge grault garply waldo\n"
+	out := Ls(in)
+	if out == "" {
+		t.Errorf("expected non-empty output (passthrough), got empty")
+	}
+}
+
 func TestLsCompactsLongFormat(t *testing.T) {
 	in := `total 24
 drwxr-xr-x  4 user staff  128 May  4 11:22 src

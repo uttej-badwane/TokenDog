@@ -63,6 +63,7 @@ func init() {
 	rootCmd.AddCommand(gainCmd)
 	rootCmd.AddCommand(rewriteCmd)
 	rootCmd.AddCommand(discoverCmd)
+	rootCmd.AddCommand(replayCmd)
 	rootCmd.AddCommand(ghCmd)
 	rootCmd.AddCommand(pytestCmd)
 	rootCmd.AddCommand(jestCmd)

@@ -157,6 +157,46 @@ func TestRewriteCommand(t *testing.T) {
 	}
 }
 
+func TestParseBinary(t *testing.T) {
+	cases := []struct {
+		name, in   string
+		wantBin    string
+		wantArgs   []string
+		wantOK     bool
+	}{
+		{"plain", "git status", "git", []string{"status"}, true},
+		{"path-prefixed", "/usr/local/bin/git status", "git", []string{"status"}, true},
+		{"env prefix", "AWS_PROFILE=foo aws ec2 describe-instances", "aws", []string{"ec2", "describe-instances"}, true},
+		{"already td", "td git status", "git", []string{"status"}, true},
+		{"already tokendog", "tokendog git status", "git", []string{"status"}, true},
+		{"bash -c double-quoted", `bash -c "git status"`, "git", []string{"status"}, true},
+		{"bash -c single-quoted", `bash -c 'git status'`, "git", []string{"status"}, true},
+		{"sh -lc env", `sh -lc "AWS_PROFILE=p aws s3 ls"`, "aws", []string{"s3", "ls"}, true},
+		{"unsupported", "echo hello", "", nil, false},
+		{"empty", "", "", nil, false},
+		{"only env vars", "FOO=bar BAZ=qux", "", nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bin, args, ok := ParseBinary(tc.in)
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
+			}
+			if bin != tc.wantBin {
+				t.Errorf("bin = %q, want %q", bin, tc.wantBin)
+			}
+			if len(args) != len(tc.wantArgs) {
+				t.Fatalf("args len = %d, want %d (%v vs %v)", len(args), len(tc.wantArgs), args, tc.wantArgs)
+			}
+			for i := range args {
+				if args[i] != tc.wantArgs[i] {
+					t.Errorf("args[%d] = %q, want %q", i, args[i], tc.wantArgs[i])
+				}
+			}
+		})
+	}
+}
+
 func TestIsEnvAssignment(t *testing.T) {
 	cases := []struct {
 		in   string

@@ -299,6 +299,72 @@ func unquoteShellArg(s string) (string, rune, string, bool) {
 	return "", 0, "", false
 }
 
+// ParseBinary extracts the underlying binary and its remaining args from a
+// Claude-emitted command string. Mirrors RewriteCommand's parsing rules
+// (env-var prefix skipping, path-prefix stripping, bash -c unwrapping,
+// Supported lookup) but returns the parsed pieces instead of a rewritten
+// string. Used by td replay to classify historical transcripts so the same
+// command ends up in the same filter live and on replay.
+//
+// Returns (binary, args, true) when a Supported binary is found,
+// ("", nil, false) otherwise. binary is the canonical name (e.g. "git"),
+// not the path-prefixed form Claude may have emitted.
+func ParseBinary(cmd string) (string, []string, bool) {
+	cmd = strings.TrimSpace(cmd)
+
+	// Already wrapped with td? Strip the prefix and parse the rest. Useful
+	// for replaying records that already have td hook injection (post-v0.5.0).
+	if strings.HasPrefix(cmd, "td ") {
+		cmd = strings.TrimPrefix(cmd, "td ")
+	} else if strings.HasPrefix(cmd, "tokendog ") {
+		cmd = strings.TrimPrefix(cmd, "tokendog ")
+	}
+
+	if inner, ok := unwrapShellC(cmd); ok {
+		return ParseBinary(inner)
+	}
+
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		return "", nil, false
+	}
+	binIdx := 0
+	for binIdx < len(parts) && IsEnvAssignment(parts[binIdx]) {
+		binIdx++
+	}
+	if binIdx >= len(parts) {
+		return "", nil, false
+	}
+	bin := parts[binIdx]
+	if i := strings.LastIndex(bin, "/"); i >= 0 {
+		bin = bin[i+1:]
+	}
+	if _, ok := Supported[bin]; !ok {
+		return "", nil, false
+	}
+	return bin, parts[binIdx+1:], true
+}
+
+// unwrapShellC returns the inner command string from `bash -c "..."` style
+// wrappers without rewriting it. Counterpart to rewriteShellC for callers
+// that just want to unwrap and process the inner command themselves.
+func unwrapShellC(cmd string) (string, bool) {
+	for _, shell := range []string{"bash", "sh", "zsh"} {
+		for _, flag := range []string{"-lc", "-ic", "-c"} {
+			prefix := shell + " " + flag + " "
+			if !strings.HasPrefix(cmd, prefix) {
+				continue
+			}
+			rest := strings.TrimPrefix(cmd, prefix)
+			inner, _, _, ok := unquoteShellArg(rest)
+			if ok {
+				return inner, true
+			}
+		}
+	}
+	return "", false
+}
+
 // IsEnvAssignment reports whether s is a shell env-var assignment of the
 // form NAME=VALUE where NAME starts with a letter or underscore and contains
 // only letters, digits, and underscores. Quoted values with embedded spaces
