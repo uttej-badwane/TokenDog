@@ -135,7 +135,9 @@ func TestRewriteCommand(t *testing.T) {
 		{"single env-var prefix", "AWS_PROFILE=foo aws ec2 describe-instances", "AWS_PROFILE=foo td aws ec2 describe-instances"},
 		{"multiple env-vars", "DEBUG=1 PATH=/x:/y npm test", "DEBUG=1 PATH=/x:/y td npm test"},
 		{"env-var only — no command", "FOO=bar", "FOO=bar"},
-		{"env-var unsupported binary", "FOO=bar grep pattern", "FOO=bar grep pattern"},
+		// grep moved into Supported in v0.8.2, so this case now rewrites.
+		// Use a still-unsupported binary for the env-var-unsupported case.
+		{"env-var unsupported binary", "FOO=bar tail file", "FOO=bar tail file"},
 		{"binary with no args", "git", "td git"},
 		{"bash -c double-quoted", `bash -c "git status"`, `bash -c "td git status"`},
 		{"bash -c single-quoted", `bash -c 'git status'`, `bash -c 'td git status'`},

@@ -44,6 +44,7 @@ var Supported = map[string]string{
 	"gcloud":  "gcloud",
 	"az":      "az",
 	"make":    "make",
+	"grep":    "grep",
 }
 
 func ProcessClaude(input ClaudeHookInput) *ClaudeHookOutput {

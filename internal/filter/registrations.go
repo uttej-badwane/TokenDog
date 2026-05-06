@@ -32,6 +32,7 @@ func init() {
 	Register("gcloud", cloudAdapter)
 	Register("az", cloudAdapter)
 	Register("make", makeAdapter)
+	Register("grep", grepAdapter)
 }
 
 // Per-tool value-flag sets. We list only the flags that change which

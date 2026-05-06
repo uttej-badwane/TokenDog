@@ -80,4 +80,5 @@ func init() {
 	rootCmd.AddCommand(gcloudCmd)
 	rootCmd.AddCommand(azCmd)
 	rootCmd.AddCommand(makeCmd)
+	rootCmd.AddCommand(grepCmd)
 }
