@@ -146,7 +146,28 @@ func TestRewriteCommand(t *testing.T) {
 		{"bash -c with env-var prefix", `bash -c "AWS_PROFILE=foo aws ec2 describe-instances"`, `bash -c "AWS_PROFILE=foo td aws ec2 describe-instances"`},
 		{"bash -c unterminated quote", `bash -c "git status`, `bash -c "git status`},
 		{"bash without -c", `bash script.sh`, `bash script.sh`},
-		{"bash -c with embedded quotes — pass through", `bash -c "echo 'hi' && git status"`, `bash -c "echo 'hi' && git status"`},
+		{"bash -c with chain inside", `bash -c "echo 'hi' && git status"`, `bash -c "echo 'hi' && td git status"`},
+		// Chain operator rewrites — biggest unhandled category in real
+		// transcripts is `cd /path && supported-cmd`.
+		{"chain: cd && git", "cd /tmp && git status", "cd /tmp && td git status"},
+		{"chain: semicolon both supported", "git status; ls", "td git status ; td ls"},
+		{"chain: multi-cd to git", "cd /a && cd /b && git log", "cd /a && cd /b && td git log"},
+		{"chain: || or", "git status || echo failed", "td git status || echo failed"},
+		{"chain: env-prefix on supported segment", "AWS_PROFILE=p aws s3 ls && git status", "AWS_PROFILE=p td aws s3 ls && td git status"},
+		{"chain: no supported anywhere", "cd /a && cd /b && echo done", "cd /a && cd /b && echo done"},
+		// Quote-aware bail: chain ops inside quotes must NOT split.
+		{"quoted: && in double quotes", `echo "a && b"`, `echo "a && b"`},
+		{"quoted: outer && with quoted inner", `echo 'cmd1 && cmd2' && git status`, `echo 'cmd1 && cmd2' && td git status`},
+		// Escapes and substitutions — splitter must bail.
+		{"escaped &&", `echo a \&\& b`, `echo a \&\& b`},
+		{"backticks", "echo `git status && ls`", "echo `git status && ls`"},
+		{"command sub $()", "echo $(git status; ls)", "echo $(git status; ls)"},
+		{"heredoc bail", "cat <<EOF\n&&\nEOF", "cat <<EOF\n&&\nEOF"},
+		// Single & is background, single | is pipe — neither should split.
+		// `ls &` runs supported `ls` in the background. We rewrite ls;
+		// the lone `&` doesn't trigger chain splitting (only `&&` does).
+		{"background single &", "ls /tmp &", "td ls /tmp &"},
+		{"pipe single |", "git log | head -5", "td git log | head -5"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -154,6 +175,86 @@ func TestRewriteCommand(t *testing.T) {
 				t.Errorf("RewriteCommand(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSplitChain(t *testing.T) {
+	cases := []struct {
+		name     string
+		in       string
+		segments []string
+		seps     []string
+	}{
+		{"no chain", "git status", []string{"git status"}, nil},
+		{"empty", "", []string{""}, nil},
+		{"whitespace", "   ", []string{"   "}, nil},
+		{"&&", "a && b", []string{"a", "b"}, []string{"&&"}},
+		{"||", "a || b", []string{"a", "b"}, []string{"||"}},
+		{";", "a; b", []string{"a", "b"}, []string{";"}},
+		{"three segments", "a && b; c", []string{"a", "b", "c"}, []string{"&&", ";"}},
+		{"single & (background) is not chain", "a & b", []string{"a & b"}, nil},
+		{"single | (pipe) is not chain", "a | b", []string{"a | b"}, nil},
+		{"quoted && stays single", `echo "a && b"`, []string{`echo "a && b"`}, nil},
+		{"backtick bail", "echo `a && b`", []string{"echo `a && b`"}, nil},
+		{"$() bail", "echo $(a && b)", []string{"echo $(a && b)"}, nil},
+		{"heredoc bail", "cat <<EOF\n&&\nEOF", []string{"cat <<EOF\n&&\nEOF"}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			segs, seps := splitChain(tc.in)
+			if len(segs) != len(tc.segments) {
+				t.Fatalf("segs len = %d (%v), want %d (%v)", len(segs), segs, len(tc.segments), tc.segments)
+			}
+			for i := range segs {
+				if segs[i] != tc.segments[i] {
+					t.Errorf("seg[%d] = %q, want %q", i, segs[i], tc.segments[i])
+				}
+			}
+			if len(seps) != len(tc.seps) {
+				t.Fatalf("seps len = %d (%v), want %d (%v)", len(seps), seps, len(tc.seps), tc.seps)
+			}
+			for i := range seps {
+				if seps[i] != tc.seps[i] {
+					t.Errorf("sep[%d] = %q, want %q", i, seps[i], tc.seps[i])
+				}
+			}
+		})
+	}
+}
+
+func TestInjectSessionEnvChainForm(t *testing.T) {
+	// Single-segment: leading-assignment form preserved (existing behavior).
+	got := injectSessionEnv("td git status", "abc-123", "/p/sess.jsonl")
+	want := `TD_SESSION_ID=abc-123 TD_TRANSCRIPT_PATH='/p/sess.jsonl' td git status`
+	if got != want {
+		t.Errorf("single-segment form mismatch:\n  got:  %q\n  want: %q", got, want)
+	}
+
+	// Chain form: export so vars propagate across segments.
+	got = injectSessionEnv("cd /tmp && td git status", "abc-123", "/p/sess.jsonl")
+	want = `export TD_SESSION_ID=abc-123 TD_TRANSCRIPT_PATH='/p/sess.jsonl'; cd /tmp && td git status`
+	if got != want {
+		t.Errorf("chain form mismatch:\n  got:  %q\n  want: %q", got, want)
+	}
+}
+
+func TestProcessClaudeChainEndToEnd(t *testing.T) {
+	// Real shape Claude emits: cd into a path, then run a supported command.
+	// The hook should rewrite the supported segment AND use export-form env.
+	in := ClaudeHookInput{
+		SessionID:      "session-abc",
+		TranscriptPath: "/Users/me/.claude/projects/proj/sess.jsonl",
+		ToolName:       "Bash",
+		ToolInput:      map[string]any{"command": "cd /repo && git status"},
+	}
+	out := ProcessClaude(in)
+	if out == nil {
+		t.Fatal("ProcessClaude returned nil")
+	}
+	got := out.HookSpecificOutput.UpdatedInput["command"].(string)
+	want := `export TD_SESSION_ID=session-abc TD_TRANSCRIPT_PATH='/Users/me/.claude/projects/proj/sess.jsonl'; cd /repo && td git status`
+	if got != want {
+		t.Errorf("chain end-to-end mismatch:\n  got:  %q\n  want: %q", got, want)
 	}
 }
 
@@ -175,6 +276,15 @@ func TestParseBinary(t *testing.T) {
 		{"unsupported", "echo hello", "", nil, false},
 		{"empty", "", "", nil, false},
 		{"only env vars", "FOO=bar BAZ=qux", "", nil, false},
+		// Chain handling — exactly one Supported segment is the success
+		// case. Multiple supported segments deliberately return false to
+		// avoid mis-attributing concatenated tool_result output.
+		{"chain: one supported", "cd /path && git log", "git", []string{"log"}, true},
+		{"chain: multi-cd one supported", "cd /a && cd /b && cd /c && git log", "git", []string{"log"}, true},
+		{"chain: two supported skipped", "git status; ls", "", nil, false},
+		{"chain: env-prefix supported", "AWS_PROFILE=p aws s3 ls && cd /x", "aws", []string{"s3", "ls"}, true},
+		{"chain: zero supported", "cd /a && echo hi", "", nil, false},
+		{"pipe stays single segment", "git log | head -5", "git", []string{"log", "|", "head", "-5"}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

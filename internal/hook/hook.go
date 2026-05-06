@@ -79,25 +79,33 @@ func ProcessClaude(input ClaudeHookInput) *ClaudeHookOutput {
 // would require non-trivial escaping, that field is dropped rather than
 // risking command injection. Empty values are skipped silently.
 //
-// The rewritten form looks like:
+// Two output shapes depending on whether the rewritten command contains a
+// chain operator:
 //
-//	TD_SESSION_ID=abc123 TD_TRANSCRIPT_PATH='/path/file.jsonl' td git status
+//	(no chain)  TD_SESSION_ID=abc TD_TRANSCRIPT_PATH='/p' td git status
+//	(chain)     export TD_SESSION_ID=abc TD_TRANSCRIPT_PATH='/p'; cd /a && td git status
 //
-// IsEnvAssignment + the existing env-prefix-skipping logic in RewriteCommand
-// already handle this shape, so subsequent rewrites (e.g. through bash -c
-// recursion) won't be confused.
+// The leading-assignment form scopes vars to the first command only — when
+// the rewrite produced a chain (cd /a && td git status), the `td` segment
+// would never see them. The export form propagates across the chain. Each
+// Bash tool call runs in its own bash subshell, so export's process-level
+// scope dies with that invocation — no cross-command pollution.
 func injectSessionEnv(cmd, sessionID, transcriptPath string) string {
-	prefix := ""
+	var assignments []string
 	if isSafeSessionID(sessionID) {
-		prefix += "TD_SESSION_ID=" + sessionID + " "
+		assignments = append(assignments, "TD_SESSION_ID="+sessionID)
 	}
 	if isSafeTranscriptPath(transcriptPath) {
-		prefix += "TD_TRANSCRIPT_PATH='" + transcriptPath + "' "
+		assignments = append(assignments, "TD_TRANSCRIPT_PATH='"+transcriptPath+"'")
 	}
-	if prefix == "" {
+	if len(assignments) == 0 {
 		return cmd
 	}
-	return prefix + cmd
+	joined := strings.Join(assignments, " ")
+	if hasChainOp(cmd) {
+		return "export " + joined + "; " + cmd
+	}
+	return joined + " " + cmd
 }
 
 // isSafeSessionID accepts UUIDs and similar opaque IDs: alphanumerics,
@@ -134,6 +142,18 @@ func isSafeTranscriptPath(s string) bool {
 }
 
 func RewriteCommand(cmd string) string {
+	return rewriteCommand(cmd, 0)
+}
+
+// maxRewriteDepth bounds the recursion through bash -c / chain-segment
+// re-entry. Plausible nest is bash -c → chain → segment → bash -c, i.e. 4.
+// Anything deeper is almost certainly malformed input — bail out unchanged.
+const maxRewriteDepth = 4
+
+func rewriteCommand(cmd string, depth int) string {
+	if depth > maxRewriteDepth {
+		return cmd
+	}
 	cmd = strings.TrimSpace(cmd)
 	if strings.HasPrefix(cmd, "td ") || strings.HasPrefix(cmd, "tokendog ") {
 		return cmd
@@ -144,8 +164,29 @@ func RewriteCommand(cmd string) string {
 	// would be a no-op (we don't filter bash itself), so unwrap the inner
 	// command, rewrite it, and re-quote. If the inner command is itself
 	// unrewritable, the result is identical to the input.
-	if rewritten, ok := rewriteShellC(cmd); ok {
+	if rewritten, ok := rewriteShellC(cmd, depth); ok {
 		return rewritten
+	}
+
+	// Chain operators: `cd /path && git status`, `git status; ls`. Bash
+	// runs each segment as an independent command, so we rewrite each one
+	// independently — the chain operators keep their original meaning at
+	// exec time. splitChain bails out (returns 1 segment) on inputs we
+	// can't safely split (backticks, $(...), heredocs, escaped operators).
+	if segs, seps := splitChain(cmd); len(segs) > 1 {
+		rewritten := make([]string, len(segs))
+		changed := false
+		for i, s := range segs {
+			r := rewriteCommand(s, depth+1)
+			rewritten[i] = r
+			if r != s {
+				changed = true
+			}
+		}
+		if !changed {
+			return cmd
+		}
+		return reassembleChain(rewritten, seps)
 	}
 
 	parts := strings.Fields(cmd)
@@ -185,11 +226,173 @@ func RewriteCommand(cmd string) string {
 	return out
 }
 
+// reassembleChain stitches segments back together with their original
+// separators. Always emits separator-with-spaces form (` && `, ` ; `, etc.)
+// even if the original used different spacing — bash accepts either, and
+// canonicalizing keeps the tests deterministic.
+func reassembleChain(segs, seps []string) string {
+	var b strings.Builder
+	for i, s := range segs {
+		b.WriteString(s)
+		if i < len(seps) {
+			b.WriteString(" ")
+			b.WriteString(seps[i])
+			b.WriteString(" ")
+		}
+	}
+	return b.String()
+}
+
+// splitChain splits cmd on top-level && / || / ; outside quoted regions.
+// Returns segments and the operators between them. When the input contains
+// command substitution (`$(...)` / backticks), heredocs (`<<`), or
+// backslash-escaped chain operators, returns a single-segment slice — we
+// can't reliably parse those without a real shell parser, and a wrong
+// split would produce malformed shell. Safety > coverage.
+func splitChain(cmd string) (segments, separators []string) {
+	if strings.TrimSpace(cmd) == "" {
+		return []string{cmd}, nil
+	}
+	if !safeToSplit(cmd) {
+		return []string{cmd}, nil
+	}
+
+	var current strings.Builder
+	var inSingle, inDouble bool
+	flush := func(sep string) {
+		segments = append(segments, strings.TrimSpace(current.String()))
+		separators = append(separators, sep)
+		current.Reset()
+	}
+
+	for i := 0; i < len(cmd); i++ {
+		c := cmd[i]
+		if inSingle {
+			current.WriteByte(c)
+			if c == '\'' {
+				inSingle = false
+			}
+			continue
+		}
+		if inDouble {
+			current.WriteByte(c)
+			if c == '\\' && i+1 < len(cmd) {
+				current.WriteByte(cmd[i+1])
+				i++
+				continue
+			}
+			if c == '"' {
+				inDouble = false
+			}
+			continue
+		}
+		switch c {
+		case '\'':
+			inSingle = true
+			current.WriteByte(c)
+		case '"':
+			inDouble = true
+			current.WriteByte(c)
+		case '\\':
+			// Escaped char outside quotes: copy both bytes verbatim so
+			// `\&\&` doesn't get treated as a chain op.
+			current.WriteByte(c)
+			if i+1 < len(cmd) {
+				current.WriteByte(cmd[i+1])
+				i++
+			}
+		case '&':
+			if i+1 < len(cmd) && cmd[i+1] == '&' {
+				flush("&&")
+				i++
+				continue
+			}
+			current.WriteByte(c) // single & = background, leave alone
+		case '|':
+			if i+1 < len(cmd) && cmd[i+1] == '|' {
+				flush("||")
+				i++
+				continue
+			}
+			current.WriteByte(c) // single | = pipe, leave alone
+		case ';':
+			flush(";")
+		default:
+			current.WriteByte(c)
+		}
+	}
+	if current.Len() > 0 || len(segments) > 0 {
+		segments = append(segments, strings.TrimSpace(current.String()))
+	}
+	if len(segments) == 0 {
+		return []string{cmd}, nil
+	}
+	return segments, separators
+}
+
+// safeToSplit returns false for inputs containing constructs we can't
+// reliably handle: command substitution, backticks, and heredocs. We
+// scan only outside of quoted regions because `echo "$(date)"` is fine —
+// the substitution is inside double quotes and we're not splitting there
+// anyway. Outside quotes, any of these constructs means we bail.
+func safeToSplit(cmd string) bool {
+	var inSingle, inDouble bool
+	for i := 0; i < len(cmd); i++ {
+		c := cmd[i]
+		if inSingle {
+			if c == '\'' {
+				inSingle = false
+			}
+			continue
+		}
+		if inDouble {
+			if c == '\\' && i+1 < len(cmd) {
+				i++
+				continue
+			}
+			if c == '"' {
+				inDouble = false
+			}
+			continue
+		}
+		switch c {
+		case '\'':
+			inSingle = true
+		case '"':
+			inDouble = true
+		case '\\':
+			if i+1 < len(cmd) {
+				i++
+			}
+		case '`':
+			return false
+		case '$':
+			if i+1 < len(cmd) && cmd[i+1] == '(' {
+				return false
+			}
+		case '<':
+			if i+1 < len(cmd) && cmd[i+1] == '<' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// hasChainOp reports whether splitChain would produce more than one segment
+// for cmd. Used by injectSessionEnv to pick between leading-assignment and
+// export forms.
+func hasChainOp(cmd string) bool {
+	segs, _ := splitChain(cmd)
+	return len(segs) > 1
+}
+
 // rewriteShellC detects `<shell> -c <inner>` and rewrites the inner command,
 // preserving the original quoting style. Returns (rewritten, true) on a
 // successful rewrite, (cmd, false) otherwise. We handle the three common
-// shells (bash/sh/zsh) that Claude Code might emit.
-func rewriteShellC(cmd string) (string, bool) {
+// shells (bash/sh/zsh) that Claude Code might emit. depth is forwarded to
+// the recursive rewrite so the global recursion guard sees nested chains.
+func rewriteShellC(cmd string, depth int) (string, bool) {
 	var shell string
 	for _, s := range []string{"bash", "sh", "zsh"} {
 		if strings.HasPrefix(cmd, s+" -c ") || strings.HasPrefix(cmd, s+" -lc ") || strings.HasPrefix(cmd, s+" -ic ") {
@@ -221,7 +424,7 @@ func rewriteShellC(cmd string) (string, bool) {
 		return cmd, false
 	}
 
-	rewritten := RewriteCommand(inner)
+	rewritten := rewriteCommand(inner, depth+1)
 	if rewritten == inner {
 		return cmd, false
 	}
@@ -322,6 +525,28 @@ func ParseBinary(cmd string) (string, []string, bool) {
 
 	if inner, ok := unwrapShellC(cmd); ok {
 		return ParseBinary(inner)
+	}
+
+	// Chain-aware classification: if the command is a chain, return the
+	// single Supported segment if exactly one exists, else give up. Two
+	// supported segments (e.g. `git status; ls`) means the tool_result
+	// in a transcript holds both outputs concatenated — applying one
+	// tool's filter to the combined blob would mis-classify the other.
+	// Conservative skip; replay treats it as unhandled.
+	if segs, _ := splitChain(cmd); len(segs) > 1 {
+		var matchBin string
+		var matchArgs []string
+		matches := 0
+		for _, s := range segs {
+			if bin, args, ok := ParseBinary(s); ok {
+				matchBin, matchArgs = bin, args
+				matches++
+			}
+		}
+		if matches == 1 {
+			return matchBin, matchArgs, true
+		}
+		return "", nil, false
 	}
 
 	parts := strings.Fields(cmd)
