@@ -63,16 +63,16 @@ func (d DispatchInfo) Key() string {
 
 // Result is the aggregate of a replay across many transcripts.
 type Result struct {
-	SessionsScanned   int
-	BashCallsSeen     int
-	BashCallsHandled  int // how many had a Supported binary
-	RawBytes          int
-	FilteredBytes     int
-	RawTokens         int
-	FilteredTokens    int
-	PerCommand        map[string]*CommandStat
-	PerSession        []*SessionStat
-	UnhandledTopN     map[string]int // binary → count for "not handled" report
+	SessionsScanned  int
+	BashCallsSeen    int
+	BashCallsHandled int // how many had a Supported binary
+	RawBytes         int
+	FilteredBytes    int
+	RawTokens        int
+	FilteredTokens   int
+	PerCommand       map[string]*CommandStat
+	PerSession       []*SessionStat
+	UnhandledTopN    map[string]int // binary → count for "not handled" report
 }
 
 // CommandStat aggregates by command (e.g. "gh run" or "aws ec2").
@@ -87,12 +87,12 @@ type CommandStat struct {
 
 // SessionStat is one transcript file's contribution.
 type SessionStat struct {
-	SessionID      string
-	Path           string
-	LastActivity   time.Time
-	BashCalls      int
-	RawTokens      int
-	TokensSaved    int
+	SessionID    string
+	Path         string
+	LastActivity time.Time
+	BashCalls    int
+	RawTokens    int
+	TokensSaved  int
 }
 
 // Options controls walk behavior. Zero value walks everything.
@@ -106,9 +106,9 @@ type Options struct {
 
 // transcriptLine is a single JSONL row. We only decode the parts we need.
 type transcriptLine struct {
-	Type      string    `json:"type"`
-	SessionID string    `json:"sessionId"`
-	Timestamp string    `json:"timestamp"`
+	Type      string `json:"type"`
+	SessionID string `json:"sessionId"`
+	Timestamp string `json:"timestamp"`
 	Message   *struct {
 		Content json.RawMessage `json:"content"`
 		Role    string          `json:"role"`

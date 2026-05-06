@@ -29,12 +29,12 @@ type Calibrator interface {
 // pricing changes — used for the USD column in `td gain`. Output tokens are
 // not relevant: tool output is fed back to the model as input.
 const (
-	priceOpus47PerM    = 15.0 // $/M input tokens, standard 200K context
-	priceSonnet46PerM  = 3.0
-	priceHaiku45PerM   = 0.80
-	priceOpus471MPerM  = 30.0 // 1M context premium tier (>200K input)
-	defaultModelPerM   = priceOpus47PerM
-	defaultModelLabel  = "Opus 4.7"
+	priceOpus47PerM   = 15.0 // $/M input tokens, standard 200K context
+	priceSonnet46PerM = 3.0
+	priceHaiku45PerM  = 0.80
+	priceOpus471MPerM = 30.0 // 1M context premium tier (>200K input)
+	defaultModelPerM  = priceOpus47PerM
+	defaultModelLabel = "Opus 4.7"
 )
 
 type Record struct {

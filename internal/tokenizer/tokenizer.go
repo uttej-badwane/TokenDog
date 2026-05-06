@@ -17,10 +17,10 @@ import (
 const encoding = "cl100k_base"
 
 var (
-	once    sync.Once
-	enc     *tiktoken.Tiktoken
-	encErr  error
-	loadOK  bool
+	once   sync.Once
+	enc    *tiktoken.Tiktoken
+	encErr error
+	loadOK bool
 )
 
 // load lazily initializes the tokenizer the first time Count is called. We

@@ -159,10 +159,10 @@ func TestRewriteCommand(t *testing.T) {
 
 func TestParseBinary(t *testing.T) {
 	cases := []struct {
-		name, in   string
-		wantBin    string
-		wantArgs   []string
-		wantOK     bool
+		name, in string
+		wantBin  string
+		wantArgs []string
+		wantOK   bool
 	}{
 		{"plain", "git status", "git", []string{"status"}, true},
 		{"path-prefixed", "/usr/local/bin/git status", "git", []string{"status"}, true},

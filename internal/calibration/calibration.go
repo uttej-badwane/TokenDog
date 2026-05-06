@@ -54,12 +54,12 @@ type Snapshot struct {
 
 // SessionSample is one session's contribution to the rolling average.
 type SessionSample struct {
-	SessionID         string  `json:"session_id"`
-	AnthropicInput    int     `json:"anthropic_input"` // input + cache_creation (newly-seen content)
-	CL100KFromTD      int     `json:"cl100k_from_td"`  // sum of RawTokens for records in this session
-	Ratio             float64 `json:"ratio"`
-	NumTDRecords      int     `json:"num_td_records"`
-	ObservedAt        time.Time `json:"observed_at"`
+	SessionID      string    `json:"session_id"`
+	AnthropicInput int       `json:"anthropic_input"` // input + cache_creation (newly-seen content)
+	CL100KFromTD   int       `json:"cl100k_from_td"`  // sum of RawTokens for records in this session
+	Ratio          float64   `json:"ratio"`
+	NumTDRecords   int       `json:"num_td_records"`
+	ObservedAt     time.Time `json:"observed_at"`
 }
 
 func dataPath() (string, error) {

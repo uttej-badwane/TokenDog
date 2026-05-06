@@ -98,8 +98,8 @@ func TestSaveLoadRoundtrip(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 	orig := &Snapshot{
-		Sessions: []SessionSample{{SessionID: "s", Ratio: 1.4, AnthropicInput: 100, CL100KFromTD: 70}},
-		Ratio:    1.4,
+		Sessions:     []SessionSample{{SessionID: "s", Ratio: 1.4, AnthropicInput: 100, CL100KFromTD: 70}},
+		Ratio:        1.4,
 		LastComputed: time.Now().UTC().Truncate(time.Second),
 	}
 	if err := Save(orig); err != nil {

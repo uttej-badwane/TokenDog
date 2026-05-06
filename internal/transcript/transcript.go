@@ -20,16 +20,16 @@ import (
 // file. Numbers come straight from Anthropic's `usage` blocks — these are
 // the ground truth that calibration measures cl100k against.
 type SessionTotals struct {
-	SessionID            string
-	InputTokens          int   // sum of usage.input_tokens (uncached new input)
-	OutputTokens         int   // sum of usage.output_tokens
-	CacheCreationTokens  int   // sum of usage.cache_creation_input_tokens
-	CacheReadTokens      int   // sum of usage.cache_read_input_tokens
-	TotalConsumedTokens  int   // input + output + cache_creation + cache_read
-	TotalContextTokens   int   // input + cache_creation + cache_read (no output)
-	LastTimestamp        time.Time
-	NumAPICalls          int
-	Path                 string
+	SessionID           string
+	InputTokens         int // sum of usage.input_tokens (uncached new input)
+	OutputTokens        int // sum of usage.output_tokens
+	CacheCreationTokens int // sum of usage.cache_creation_input_tokens
+	CacheReadTokens     int // sum of usage.cache_read_input_tokens
+	TotalConsumedTokens int // input + output + cache_creation + cache_read
+	TotalContextTokens  int // input + cache_creation + cache_read (no output)
+	LastTimestamp       time.Time
+	NumAPICalls         int
+	Path                string
 }
 
 // line mirrors the shape ccstatusline parses with Zod. Fields we don't read
@@ -43,8 +43,8 @@ type line struct {
 	Message           *struct {
 		StopReason *string `json:"stop_reason"`
 		Usage      *struct {
-			InputTokens             int `json:"input_tokens"`
-			OutputTokens            int `json:"output_tokens"`
+			InputTokens              int `json:"input_tokens"`
+			OutputTokens             int `json:"output_tokens"`
 			CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 			CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 		} `json:"usage"`
