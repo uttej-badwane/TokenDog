@@ -1,20 +1,12 @@
 package cmd
 
-import (
-	"github.com/spf13/cobra"
-	"tokendog/internal/filter"
-)
+import "github.com/spf13/cobra"
 
 var dockerCmd = &cobra.Command{
 	Use:                "docker",
 	Short:              "Docker commands with compact output",
 	DisableFlagParsing: true,
-	RunE:               runDocker,
-}
-
-func runDocker(_ *cobra.Command, args []string) error {
-	subcmd := extractSubcommand(args, dockerValueFlags)
-	return runFiltered("docker", args, func(raw string) string {
-		return filter.Docker(subcmd, raw)
-	}, "td docker ")
+	RunE: func(_ *cobra.Command, args []string) error {
+		return runFiltered("docker", args, "td docker ")
+	},
 }

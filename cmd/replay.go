@@ -84,106 +84,20 @@ func runReplay(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-// dispatchReplay is the binary→filter routing replay calls back into. Mirrors
-// what cmd/run.go's runFiltered does for live commands. Returns Handled=true
-// whenever the binary is in hook.Supported, regardless of whether the filter
-// produced a savings — a no-op filter on already-minimal output is still a
-// "TD touched it" event for accounting purposes.
+// dispatchReplay routes replay through the same registry that cmd/run.go
+// uses live. Live and replay always agree on what each command would have
+// done because they share a single dispatcher.
 func dispatchReplay(command, raw string) (string, replay.DispatchInfo) {
 	bin, args, ok := hook.ParseBinary(command)
 	if !ok {
 		return raw, replay.DispatchInfo{Handled: false}
 	}
-	filtered := filter.Guard(raw, applyFilter(bin, args, raw))
+	filtered, _ := filter.Apply(bin, args, raw)
 	return filtered, replay.DispatchInfo{
 		Handled: true,
 		Binary:  bin,
-		Subcmd:  subcmdForBinary(bin, args),
+		Subcmd:  filter.SubcmdFor(bin, args),
 	}
-}
-
-// subcmdForBinary picks the subcommand the live runner would have used for
-// per-tool grouping. Mirrors the value-flag-aware extraction in cmd/run.go.
-// For tools without a meaningful subcommand concept (find, ls, jq, curl,
-// make, package managers, cloud CLIs), returns "" so the key is just the
-// binary name.
-func subcmdForBinary(bin string, args []string) string {
-	switch bin {
-	case "git":
-		return extractSubcommand(args, gitValueFlags)
-	case "gh":
-		return extractSubcommand(args, ghValueFlags)
-	case "docker":
-		return extractSubcommand(args, dockerValueFlags)
-	case "kubectl":
-		return extractSubcommand(args, kubectlValueFlags)
-	case "cargo":
-		return extractSubcommand(args, cargoValueFlags)
-	case "go":
-		return firstNonFlag(args)
-	}
-	return ""
-}
-
-// applyFilter dispatches by binary name. Mirrors the registrations in
-// cmd/root.go — every cobra subcommand gets a clause here so live and
-// replay savings stay consistent. If you add a new filter live, add it
-// here too or replay will under-report.
-func applyFilter(binary string, args []string, raw string) string {
-	switch binary {
-	case "git":
-		return filter.Git(extractSubcommand(args, gitValueFlags), raw)
-	case "ls":
-		return filter.Ls(raw)
-	case "find":
-		return filter.Find(raw)
-	case "docker":
-		return filter.Docker(extractSubcommand(args, dockerValueFlags), raw)
-	case "jq":
-		return filter.JQ(raw)
-	case "curl":
-		return filter.Curl(raw)
-	case "kubectl":
-		return filter.Kubectl(extractSubcommand(args, kubectlValueFlags), raw)
-	case "gh":
-		return filter.GH(extractSubcommand(args, ghValueFlags), raw)
-	case "pytest":
-		return filter.Test("pytest", raw)
-	case "jest":
-		return filter.Test("jest", raw)
-	case "vitest":
-		return filter.Test("vitest", raw)
-	case "go":
-		// Only `go test` is filtered live; mirror that.
-		if firstNonFlag(args) == "test" {
-			return filter.Test("go", raw)
-		}
-		return raw
-	case "cargo":
-		switch extractSubcommand(args, cargoValueFlags) {
-		case "test":
-			return filter.Test("cargo", raw)
-		case "build", "check", "fetch", "update":
-			return filter.PackageManager(raw)
-		}
-		return raw
-	case "npm", "pnpm", "yarn", "pip":
-		return filter.PackageManager(raw)
-	case "aws", "gcloud", "az":
-		return filter.Cloud(raw)
-	case "make":
-		return filter.Make(raw)
-	}
-	return raw
-}
-
-func firstNonFlag(args []string) string {
-	for _, a := range args {
-		if !strings.HasPrefix(a, "-") {
-			return a
-		}
-	}
-	return ""
 }
 
 // renderReplay produces the human-readable summary. Three sections: headline

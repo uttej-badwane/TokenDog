@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"tokendog/internal/filter"
 )
 
 var lsCmd = &cobra.Command{
@@ -28,5 +27,5 @@ func runLs(_ *cobra.Command, args []string) error {
 	if !hasLong {
 		lsArgs = append([]string{"-la"}, args...)
 	}
-	return runFiltered("ls", lsArgs, filter.Ls, "td ls ")
+	return runFiltered("ls", lsArgs, "td ls ")
 }

@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"bufio"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -15,13 +16,10 @@ import (
 	"tokendog/internal/transcript"
 )
 
-// All cost math now lives in internal/pricing — RenderGain reads the
-// per-model rate via Summary.ByModel rather than a hardcoded constant.
-// The Calibrator interface from earlier versions has been removed; the
-// session-input multiplier it computed produced misleading USD figures
-// (it measured session-token-density, not tokenizer accuracy). The
-// internal/calibration package is retained as a diagnostic only and is
-// not auto-applied to the headline number.
+// Cost math lives in internal/pricing — RenderGain sums per-model rates via
+// Summary.ByModel. The earlier Calibrator interface was removed in v0.7.0
+// after we found its multiplier was measuring session-token-density rather
+// than tokenizer accuracy and overstating USD by 100x+ in real workloads.
 
 type Record struct {
 	Command        string    `json:"command"`
@@ -149,6 +147,18 @@ func dataPath() (string, error) {
 	return filepath.Join(dir, "history.jsonl"), nil
 }
 
+// rotation thresholds — kept generous so casual users never hit them.
+const (
+	maxHistoryRecords = 100_000
+	maxHistoryAge     = 90 * 24 * time.Hour
+	rotateCheckEvery  = 256 // only check size every Nth save (cheap)
+)
+
+// saveCounter is incremented on every Save and triggers rotation checks
+// every rotateCheckEvery writes — avoids per-save os.Stat() overhead while
+// still catching the rotation threshold within a few hundred commands.
+var saveCounter int
+
 func Save(r Record) error {
 	path, err := dataPath()
 	if err != nil {
@@ -159,7 +169,109 @@ func Save(r Record) error {
 		return err
 	}
 	defer f.Close()
-	return json.NewEncoder(f).Encode(r)
+	if err := json.NewEncoder(f).Encode(r); err != nil {
+		return err
+	}
+	saveCounter++
+	if saveCounter%rotateCheckEvery == 0 {
+		go maybeRotate(path)
+	}
+	return nil
+}
+
+// maybeRotate moves history.jsonl to history-YYYY-MM.jsonl.gz if it has
+// crossed maxHistoryRecords or contains records older than maxHistoryAge.
+// Best-effort: errors are swallowed because analytics persistence must
+// never block the user's command. Runs in a goroutine from Save.
+func maybeRotate(path string) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	// Quick byte-size heuristic: 100K records × ~300 bytes = ~30MB. If the
+	// file is well under that, skip the line count.
+	if info.Size() < 5*1024*1024 {
+		return
+	}
+	records, err := loadAllFromPath(path)
+	if err != nil || len(records) == 0 {
+		return
+	}
+	tooMany := len(records) >= maxHistoryRecords
+	tooOld := time.Since(records[0].Timestamp) > maxHistoryAge
+	if !tooMany && !tooOld {
+		return
+	}
+	// Archive: split off everything older than 30 days, gzip it under a
+	// dated name, leave the recent slice in place.
+	cutoff := time.Now().Add(-30 * 24 * time.Hour)
+	var keep, archive []Record
+	for _, rec := range records {
+		if rec.Timestamp.Before(cutoff) {
+			archive = append(archive, rec)
+		} else {
+			keep = append(keep, rec)
+		}
+	}
+	if len(archive) == 0 {
+		return
+	}
+	archivePath := path + "-" + time.Now().Format("2006-01") + ".jsonl.gz"
+	if err := writeArchive(archivePath, archive); err != nil {
+		return
+	}
+	// Rewrite history.jsonl with only the kept slice. Use a temp-file +
+	// rename so a crash mid-write can't corrupt history.
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	enc := json.NewEncoder(f)
+	for _, rec := range keep {
+		_ = enc.Encode(rec)
+	}
+	f.Close()
+	_ = os.Rename(tmp, path)
+}
+
+func loadAllFromPath(path string) ([]Record, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var records []Record
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
+	for sc.Scan() {
+		var r Record
+		if json.Unmarshal(sc.Bytes(), &r) == nil {
+			records = append(records, r)
+		}
+	}
+	return records, sc.Err()
+}
+
+func writeArchive(path string, records []Record) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	if err != nil {
+		// Archive for this month already exists — append to it.
+		f, err = os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return err
+		}
+	}
+	defer f.Close()
+	gz := gzip.NewWriter(f)
+	defer gz.Close()
+	enc := json.NewEncoder(gz)
+	for _, r := range records {
+		if err := enc.Encode(r); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func LoadAll() ([]Record, error) {

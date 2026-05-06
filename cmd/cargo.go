@@ -15,21 +15,27 @@ var cargoCmd = &cobra.Command{
 	RunE:               runCargo,
 }
 
+// runCargo defers to the registry for filtering, but for unsupported
+// subcommands (run, fmt, doc, etc.) we exec without capturing — the user
+// wants the live output verbatim.
 func runCargo(_ *cobra.Command, args []string) error {
-	subcmd := extractSubcommand(args, cargoValueFlags)
-
-	switch subcmd {
-	case "test":
-		return runFiltered("cargo", args, func(raw string) string {
-			return filter.Test("cargo", raw)
-		}, "td cargo ")
-	case "build", "check", "fetch", "update":
-		return runFiltered("cargo", args, filter.PackageManager, "td cargo ")
-	default:
-		c := exec.Command("cargo", args...)
-		c.Stdout = os.Stdout
-		c.Stderr = os.Stderr
-		c.Stdin = os.Stdin
-		return c.Run()
+	if _, applied := filter.Apply("cargo", args, ""); !applied {
+		// Filter declined to handle (registry returned applied=false). This
+		// shouldn't actually happen since cargo is registered, but defend
+		// for symmetry.
+		return passthrough("cargo", args)
 	}
+	// The cargo adapter returns raw unchanged for unsupported subcommands,
+	// so calling runFiltered would still capture stdout (which is what we
+	// want — the user gets a passthrough but we record analytics noting
+	// zero savings, which honestly reflects what happened).
+	return runFiltered("cargo", args, "td cargo ")
+}
+
+func passthrough(binary string, args []string) error {
+	c := exec.Command(binary, args...)
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
+	c.Stdin = os.Stdin
+	return c.Run()
 }

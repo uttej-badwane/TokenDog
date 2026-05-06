@@ -1,45 +1,23 @@
 package cmd
 
-import (
-	"github.com/spf13/cobra"
-	"tokendog/internal/filter"
+import "github.com/spf13/cobra"
+
+// testCmd builds a cobra wrapper for pytest/jest/vitest — same Test filter
+// (passing-summary collapse, verbatim on failure). Only the binary name
+// differs.
+func testCmd(name string) *cobra.Command {
+	return &cobra.Command{
+		Use:                name,
+		Short:              name + " with passing-test summary collapse",
+		DisableFlagParsing: true,
+		RunE: func(_ *cobra.Command, args []string) error {
+			return runFiltered(name, args, "td "+name+" ")
+		},
+	}
+}
+
+var (
+	pytestCmd = testCmd("pytest")
+	jestCmd   = testCmd("jest")
+	vitestCmd = testCmd("vitest")
 )
-
-var pytestCmd = &cobra.Command{
-	Use:                "pytest",
-	Short:              "pytest with passing-test summary collapse",
-	DisableFlagParsing: true,
-	RunE:               runPytest,
-}
-
-func runPytest(_ *cobra.Command, args []string) error {
-	return runTestCommand("pytest", "pytest", args)
-}
-
-var jestCmd = &cobra.Command{
-	Use:                "jest",
-	Short:              "jest with passing-test summary collapse",
-	DisableFlagParsing: true,
-	RunE:               runJest,
-}
-
-func runJest(_ *cobra.Command, args []string) error {
-	return runTestCommand("jest", "jest", args)
-}
-
-var vitestCmd = &cobra.Command{
-	Use:                "vitest",
-	Short:              "vitest with passing-test summary collapse",
-	DisableFlagParsing: true,
-	RunE:               runVitest,
-}
-
-func runVitest(_ *cobra.Command, args []string) error {
-	return runTestCommand("vitest", "vitest", args)
-}
-
-func runTestCommand(binary, runner string, args []string) error {
-	return runFiltered(binary, args, func(raw string) string {
-		return filter.Test(runner, raw)
-	}, "td "+binary+" ")
-}

@@ -9,40 +9,41 @@
    ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝  ╚═════╝  ╚═════╝
 ```
 
-**Token-optimized CLI proxy for AI coding assistants.** TokenDog sits between your AI assistant (Claude Code, Cursor, etc.) and your shell, compressing command output before it reaches the model — saving 60–90% of tokens on common dev operations.
+**A CLI proxy that filters Bash output before it reaches your AI assistant's context window.**
 
 [![Release](https://img.shields.io/github/v/release/uttej-badwane/TokenDog)](https://github.com/uttej-badwane/TokenDog/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
----
+Claude Code (or Cursor, Cline, Aider) runs hundreds of `git`, `ls`, `find`, `gh`, `kubectl`, `aws` commands per session. Each one's stdout becomes input tokens on the next turn. TokenDog sits in the hook path, applies tool-specific compression, and reduces what your assistant has to ingest — losslessly, before any tokens are charged.
 
-## Why
-
-Claude Code and similar tools run hundreds of `git`, `ls`, `find`, and `grep` commands per session and pipe huge JSON through `jq` — each emitting verbose output that gets read into context. A single `git log` block, a noisy `kubectl get`, or a `find` that hits `node_modules` can burn thousands of tokens for content the model rarely needs.
-
-TokenDog filters this output **losslessly** — it strips structural noise (HTML tags, hint lines, permission bits, redundant whitespace) without dropping a single piece of meaningful content. The model still gets every fact it needs, just without the boilerplate.
-
----
+```
+$ td replay
+TokenDog Hindsight
+Replayed:                  107 sessions, 3,572 Bash calls (1,743 handled)
+Output volume:             1.9MB raw → 1.6MB filtered
+Would-have-saved:          95,620 tokens (16.1%)
+Projected cost saved:      $1.43 at $15/M (Opus 4.7 standard)
+```
 
 ## Install
 
 ```bash
-brew tap uttej-badwane/tokendog
-brew install tokendog
+brew tap uttej-badwane/tokendog && brew install tokendog
 ```
 
-Verify and see setup status:
+Or grab a binary directly:
 ```bash
-td welcome     # colored welcome screen — auto-detects what's configured
+curl -fsSL https://raw.githubusercontent.com/uttej-badwane/TokenDog/main/scripts/install.sh | sh
 ```
 
-Both `td` and `tokendog` work as commands (symlinked).
+Or pull the Docker image:
+```bash
+docker pull ghcr.io/uttej-badwane/tokendog:latest
+```
 
----
+## Set up the hook
 
-## Setup with Claude Code
-
-Add the following to `~/.claude/settings.json`:
+Add to `~/.claude/settings.json`:
 
 ```json
 {
@@ -57,234 +58,110 @@ Add the following to `~/.claude/settings.json`:
 }
 ```
 
-That's it. Run `td welcome` again — every checkmark should turn green.
+That's it. Run `td welcome` to verify everything is wired up.
 
----
+## What's filtered
 
-## What It Filters
+| Tool | Strategy | Real-world savings |
+|---|---|---|
+| `git status/log/diff/branch` | Strip hints, compact format, drop `index abc..def` metadata | 30–85% |
+| `gh pr/issue/run list` | Column-padding normalization (bodies untouched) | 30–60% |
+| `gh api`, `aws/gcloud/az` | Lossless JSON re-marshal | 30–80% |
+| `kubectl get/describe/top` | Table compression, blank-line collapse | 20–60% |
+| `ls -la` | Drop permissions, owner, timestamps | 55–70% |
+| `find` | Group paths by directory, skip `.git` / `node_modules` | 70–95% |
+| `pytest` / `jest` / `vitest` / `go test` / `cargo test` | Collapse to summary on all-pass; verbatim on any failure | 60–95% |
+| `npm` / `pnpm` / `yarn` / `pip` / `cargo build` | Drop fetch/progress noise | 40–80% |
+| `jq`, `curl` (JSON) | Lossless compaction, no indentation | 40–70% |
+| `docker ps/images` | Compact tables | 20–40% |
+| `make` | Drop successful-compile lines, keep warnings/errors | 30–70% |
 
-### Bash command rewrites (PreToolUse hook)
+**Lossless principle**: TokenDog never silently drops content. It restructures and removes structural noise. If filtering would lose data, the original passes through unchanged. Every filter has the `Guard` invariant: output bytes ≤ input bytes.
 
-| Command | Strategy | Typical savings |
-|---------|----------|-----------------|
-| `git status` | Strip hints, restructure to one line per state | **70–85%** |
-| `git log` | Compact format, full commit body preserved | **30–60%** |
-| `git diff` | Drop `index abc..def` metadata | **15–25%** |
-| `git branch` | One branch per line, current marked | **10–20%** |
-| `ls -la` | Drop permissions, owner, timestamps | **55–70%** |
-| `find` | Group paths by directory, skip `.git` / `node_modules` | **70–95%** |
-| `docker ps` / `images` | Compact table | **20–40%** |
-| `jq` | Lossless JSON compaction (no indentation) | **40–70%** |
-| `curl` | JSON-aware response compression — values preserved | **40–80%** |
-| `kubectl get` / `top` / `describe` | Table compression, blank-line collapse | **20–60%** |
-| `gh pr/issue/run/repo list` | Column-padding normalization, bodies untouched | **30–60%** |
-| `pytest` / `jest` / `vitest` / `go test` / `cargo test` | Collapse to summary on all-pass; verbatim on any failure | **60–95%** |
-| `npm` / `pnpm` / `yarn` / `pip` | Drop fetch/progress noise, keep warnings & errors | **40–80%** |
-| `aws` / `gcloud` / `az` | Lossless JSON compaction, table normalization, YAML blank-line collapse | **30–80%** |
-| `make` | Drop compile spam, keep warnings/errors verbatim | **30–70%** |
+## Three commands worth knowing
 
-**Lossless principle:** TokenDog never silently drops content. It restructures and removes structural noise. If filtering would lose data, the original is passed through unchanged.
-
-> **Why no PostToolUse hooks?** Claude Code's PostToolUse hook can inject `additionalContext` but cannot replace the `tool_response` already sent to the model. That makes it impossible to compact native tools (`Glob`, `Grep`, `WebFetch`, `WebSearch`) after the fact — earlier versions exposed `td pipe *` for this, but it was a no-op against current Claude Code, so it has been removed.
-
----
-
-## Usage
-
-### Hook-based (automatic)
-
-Once configured, TokenDog rewrites Claude Code's Bash calls transparently. You don't run anything manually — Claude calls `git status`, the hook rewrites it to `td git status`, and the filtered output goes back to Claude.
-
-### Manual (CLI)
-
-You can also invoke filters directly:
+### `td gain` — your savings, accurately priced
 
 ```bash
-td git status              # filtered git status
-td git log -10             # last 10 commits, compact, full body preserved
-td ls                      # clean ls
-td find . -name "*.go"     # grouped find
-td docker ps               # compact docker
-td jq '.items[].name'      # compact jq output
-td curl https://api.example.com/data
-td kubectl get pods
-td kubectl describe deploy myapp
-td gh pr list                 # compact gh tables
-td pytest tests/              # summary on all-pass, verbatim on failure
-td go test ./...              # same strict-mode for go test
-td npm install                # drops fetch/progress lines
-td aws ec2 describe-instances # lossless JSON compaction
-td make                       # drops successful-compile lines
+td gain                    # all-time totals, with calibrated USD per model
+td gain --by-model         # opus vs haiku vs sonnet split
+td gain --daily            # day-by-day breakdown
+td gain --since 7d         # last week
+td gain --json             # pipeable to jq, dashboards, ccusage
+td gain --session=current  # this Claude session only
 ```
 
-### Analytics
+Per-model pricing (`internal/pricing`) tracks Opus 4.7, Sonnet 4.6, Haiku 4.5, plus older models, with input/output/cache rates. The headline cost line uses each session's actual model — no hardcoded $15/M assumption.
+
+### `td replay` — counterfactual: "what if I'd had td running all year?"
 
 ```bash
-td gain                    # summary of savings
-td gain --history          # recent commands with per-call savings
+td replay              # walk every transcript at ~/.claude/projects/
+td replay --days 30    # last 30 days
+td replay --json       # machine-readable
 ```
 
-Sample output:
+Reads your historical Claude transcripts, replays each Bash tool_result through current filters, and tells you what TD would have saved. Also surfaces the top unhandled binaries (your priority list for new filter contributions).
 
-```
-TokenDog Savings
-════════════════════════════════════════════════════════════
-Total commands:        29
-Raw output:            1.9MB
-After filter:          31.6KB
-Saved:                 1.9MB (~486660 tokens, 98.4%)
-Efficiency:            ███████████████████████░ 98.4%
-```
-
-### Discover missed savings
-
-`td discover` scans your Claude Code session history and ranks every Bash command you've run, showing which ones went through TokenDog and which ones bypassed it.
+### `td discover` — coverage audit
 
 ```bash
-td discover
+td discover    # which Bash commands in your history bypassed td
 ```
 
-```
-Scanned 29 session files, 196 Bash commands
-  Already through td:   142 (72.4%)
-  Direct (not via td):  54
+Catches misconfigured hooks. If `gh: 70 calls, 0% coverage` shows up, your hook isn't matching.
 
-Top commands (missed = ran directly without td)
-──────────────────────────────────────────────────────────────────────────
-  Command                 Total    Missed   Coverage   Status
-──────────────────────────────────────────────────────────────────────────
-  export                  71       71          0.0%   not handled
-  gh                      9        9           0.0%   not handled
-  git                     21       0         100.0%   ✓ fully covered
-  ls                      12       0         100.0%   ✓ fully covered
-  ...
-```
+## How does this compare to ccusage?
 
-Use this to identify which filters to install hooks for, or to request new ones via GitHub Issues.
+[ccusage](https://github.com/ryoppippi/ccusage) tells you what you spent. TokenDog tells you how much less you would have spent if your tool output had been filtered. They're complementary — run both.
 
-### Debug
+`td gain --json` and `td replay --json` are designed to flow into ccusage-style dashboards.
 
-```bash
-td rewrite "git log --oneline -20"   # show how the hook would rewrite
-```
+## Cost math
 
----
+The README of older versions claimed "$450/dev/month at Opus pricing." That number was extrapolated from a heavy-workload sample and didn't reflect typical usage. The honest answer:
 
-## How It Works
+> Run `td replay` against your own transcripts. Whatever number it shows is your actual potential savings on the data you've already generated. Most users will see $1–$30/month; heavy `aws describe-*` / `kubectl get -o json` / `gh run view --log` workloads see 5–10×.
+
+Going forward, `td gain` accumulates real numbers as you use the tool, and per-model pricing makes the dollar figure trustworthy.
+
+## Architecture
 
 ```
-┌─────────────────────────────────────────┐
-│       Claude Code / AI Assistant         │
-└────────────────┬────────────────────────┘
-                 │ PreToolUse: Bash
-                 ▼
-          ┌──────────────┐
-          │ td hook      │
-          │ claude       │
-          │              │
-          │ ─ rewrite    │
-          │   command to │
-          │   td <sub>   │
-          └──────┬───────┘
-                 │
-                 ▼
-        Original cmd runs
-        via td <sub>
-        with filter applied
+~/.claude/settings.json
+        │ Bash command
+        ▼
+┌──────────────────┐
+│ td hook claude   │   PreToolUse hook
+│  - splitChain    │   (chain operators, bash -c, env vars)
+│  - rewrite       │
+│  - inject session│
+└────────┬─────────┘
+         │ rewritten command
+         ▼
+┌──────────────────┐
+│ td <tool> <args> │
+│  - cache check   │   30s TTL, env-aware
+│  - exec wrapped  │
+│  - filter.Apply  │   registry → tool-specific filter
+│  - Guard         │   lossless invariant
+│  - analytics     │   per-record token counts via cl100k
+│  - cache write   │
+└──────────────────┘
 ```
 
-- **PreToolUse / Bash** rewrites the Bash `command` field so the rewritten version executes through TokenDog's filters. The hook returns `hookSpecificOutput.updatedInput` per Claude Code's current schema.
-- All commands record analytics in `~/.config/tokendog/history.jsonl`.
+Filter dispatch is a single registry (`internal/filter/registrations.go`). Adding a filter is one source file + one line in registrations + one entry in `hook.Supported`. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
----
+## Privacy
 
-## Cost Savings
+`td replay` reads your historical Claude transcripts, which may contain pasted secrets. TokenDog runs entirely offline (no telemetry, no network) and writes only to `~/.config/tokendog/`. See [SECURITY.md](SECURITY.md) for the full data flow and threat model.
 
-At current Claude API pricing:
+## Status
 
-| Scale | Tokens saved/month | Sonnet 4.6 saved | Opus 4.7 saved |
-|-------|--------------------|-------------------|-----------------|
-| 1 dev | ~30M | $90 | $450 |
-| 10 devs | ~300M | $900 | $4,500 |
-| 50 devs | ~1.5B | $4,500 | $22,500 |
-| 100 devs | ~3B | $9,000 | $45,000 |
+Active. Recent changes in [CHANGELOG.md](CHANGELOG.md).
 
-Numbers based on observed usage of Bash filters (`gh`, `aws`, `git`, `kubectl`, `find`, `jq`, package managers, test runners). Heavy `gh` and cloud-CLI workflows benefit the most.
-
----
-
-## Commands
-
-```
-td welcome               Colored welcome screen with setup status
-td discover              Find unrewritten commands in your Claude history
-td gain                  Show savings summary
-td gain --history        Savings + recent command history
-td rewrite <cmd>         Debug: show how a command would be rewritten
-
-# Bash filters (auto-invoked via hook)
-td git <subcmd>          git with compact output
-td ls [args]             List files, structured
-td find [args]           find with grouped output
-td docker <subcmd>       docker with compact tables
-td jq [args]             jq with compact JSON output
-td curl [args]           curl with JSON-aware response compression
-td kubectl <subcmd>      kubectl get/describe/top with compact output
-td gh <subcmd>           gh with column padding normalized
-td pytest [args]         pytest with all-pass summary collapse
-td jest [args]           jest with all-pass summary collapse
-td vitest [args]         vitest with all-pass summary collapse
-td go test [args]        go test with PASS-line collapse (other go subcmds pass through)
-td cargo <subcmd>        cargo test/build/check with progress stripped
-td npm [args]            npm with fetch/progress noise stripped
-td pnpm [args]           pnpm with fetch/progress noise stripped
-td yarn [args]           yarn with fetch/progress noise stripped
-td pip [args]            pip with download/progress noise stripped
-td aws [args]            aws CLI with JSON/table compaction (lossless)
-td gcloud [args]         gcloud CLI with JSON/YAML/table compaction (lossless)
-td az [args]             az CLI with JSON/table compaction (lossless)
-td make [args]           make with successful-compile lines dropped
-
-# Hook handler (used by Claude Code, not invoked manually)
-td hook claude           Process PreToolUse hooks (stdin → stdout JSON)
-```
-
----
-
-## Roadmap
-
-- [ ] Custom `.tokendog.toml` filter files (per-project user-defined rules)
-- [ ] Cloud sync for team-wide analytics dashboard
-- [ ] Cursor / Cline / Aider hook integrations
-- [ ] Additional filters: `gh`, `terraform`, `npm`, `cargo`, `pytest`, `jest`
-- [ ] LLM-assisted summarization for unknown command output
-
----
-
-## Contributing
-
-Issues and PRs welcome. The architecture is intentionally simple:
-
-- `cmd/` — CLI commands (cobra-based)
-- `internal/filter/` — per-tool filter implementations (one file per tool)
-- `internal/hook/` — hook protocol parsers
-- `internal/welcome/` — first-run welcome experience
-- `internal/analytics/` — local savings tracking
-
-Build and test locally:
-```bash
-go build -o td .
-go test ./...
-```
-
-To add a new filter:
-1. Create `internal/filter/<tool>.go` with a function that takes raw output and returns filtered output
-2. Create `cmd/<tool>.go` with a cobra command that runs the tool, captures stdout, calls the filter
-3. Add the tool name to the `supported` map in `internal/hook/hook.go`
-4. Register the cobra command in `cmd/root.go`
-
----
+Looking for help with: more filters (`grep`, `cat`, `terraform`, `psql`, `helm` would all be useful), MCP server for Claude Desktop integration, Linux package repos. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT

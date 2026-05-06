@@ -1,12 +1,9 @@
 package cmd
 
 import (
-	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"tokendog/internal/filter"
 )
 
 var goCmd = &cobra.Command{
@@ -16,27 +13,22 @@ var goCmd = &cobra.Command{
 	RunE:               runGo,
 }
 
+// runGo decides whether to filter or passthrough based on the subcommand.
+// Only `go test` flows through the filter — `go build`, `go run`, `go vet`,
+// etc. emit user-relevant content (compiler errors, program output) that
+// must reach the model unchanged.
 func runGo(_ *cobra.Command, args []string) error {
-	subcmd := ""
-	for _, arg := range args {
-		if !strings.HasPrefix(arg, "-") {
-			subcmd = arg
-			break
+	if subcmd(args) != "test" {
+		return passthrough("go", args)
+	}
+	return runFiltered("go", args, "td go ")
+}
+
+func subcmd(args []string) string {
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			return a
 		}
 	}
-
-	// Non-test subcommands pass through unchanged. We don't want to compress
-	// `go build` output (compiler errors are user content) or `go run`
-	// (program output the model is investigating).
-	if subcmd != "test" {
-		c := exec.Command("go", args...)
-		c.Stdout = os.Stdout
-		c.Stderr = os.Stderr
-		c.Stdin = os.Stdin
-		return c.Run()
-	}
-
-	return runFiltered("go", args, func(raw string) string {
-		return filter.Test("go", raw)
-	}, "td go ")
+	return ""
 }

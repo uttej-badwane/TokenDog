@@ -13,20 +13,21 @@ import (
 )
 
 // runFiltered is the single funnel for `td <tool> <args>` style commands.
-// It owns the cache check, the exec, the filter, the negative-savings
-// guard, and the analytics record. Per-tool wrappers should always go
-// through this so the four cross-cutting concerns stay in one place.
+// It owns the cache check, the exec, the filter dispatch (via the
+// filter.Apply registry), the negative-savings guard, and the analytics
+// record. Per-tool cobra wrappers should always go through this so the
+// four cross-cutting concerns stay in one place.
 //
 // Behavior:
 //  1. Cache check by (binary, args, cwd, sensitive env). On hit within TTL,
 //     emit a compact marker and skip exec entirely.
 //  2. Exec the wrapped binary, capturing stdout. Stderr streams live so
 //     progress and warnings remain visible.
-//  3. Apply the per-tool filter, then Guard against any size regression.
-//  4. Cache the *filtered* output (smaller, identical to what the model
-//     saw) so future hits return what callers expect to see again.
+//  3. Filter via filter.Apply(binary, args, raw) — the registry resolves
+//     which filter to use, Guard ensures no size regression.
+//  4. Cache the filtered output so future hits return what callers expect.
 //  5. Record analytics with real token counts via the tokenizer.
-func runFiltered(binary string, args []string, fn func(string) string, recordPrefix string) error {
+func runFiltered(binary string, args []string, recordPrefix string) error {
 	cmdLabel := recordPrefix + strings.Join(args, " ")
 	key := cache.Key(binary, args)
 
@@ -46,7 +47,7 @@ func runFiltered(binary string, args []string, fn func(string) string, recordPre
 	elapsed := time.Since(start).Milliseconds()
 
 	raw := string(out)
-	filtered := filter.Guard(raw, fn(raw))
+	filtered, _ := filter.Apply(binary, args, raw)
 	fmt.Print(filtered)
 
 	// Only cache successful runs. Errors may resolve (transient network,

@@ -9,11 +9,14 @@ import (
 )
 
 // withTempHome redirects HOME so cache writes happen in a per-test temp dir.
-// Returns the cache dir and a cleanup function.
+// Also clears TD_NO_CACHE so a developer running tests with the env var
+// set globally (to disable cache during interactive use) doesn't see
+// false-negative test failures.
 func withTempHome(t *testing.T) string {
 	t.Helper()
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("TD_NO_CACHE", "")
 	return filepath.Join(tmp, ".config", "tokendog", "cache")
 }
 
