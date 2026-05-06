@@ -8,6 +8,13 @@ on:
 permissions:
   contents: write
 
+# Opt every JavaScript action into Node 24 ahead of GitHub's September 2026
+# default flip. The actions we use (checkout, setup-go, goreleaser-action)
+# are still on Node 20 internally; this env var forces them onto the new
+# runtime so deprecation warnings stop and we keep working past the cutoff.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -23,7 +30,10 @@ jobs:
 
       - uses: goreleaser/goreleaser-action@v6
         with:
-          version: latest
+          # Pin to v2.x major. "latest" emits a warning about implicit
+          # version locking and risks a future major bump breaking the
+          # release silently.
+          version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
