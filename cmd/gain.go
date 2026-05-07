@@ -252,12 +252,27 @@ func parseDateOrDuration(s string) (time.Time, error) {
 	if s == "" {
 		return time.Time{}, nil
 	}
-	// Relative: "7d", "2w", "1m", "1y"
+	// Relative: "30m", "1h", "7d", "2w", "1m", "1y". The 'm' unit is
+	// ambiguous (minutes vs months) but humans almost always mean
+	// minutes for short durations and months for long; we treat 'm' as
+	// MONTHS to match the longer-duration intuition. Use 'min' for
+	// minutes if needed (handled below).
 	if len(s) > 1 {
 		unit := s[len(s)-1]
-		if n, err := strconv.Atoi(s[:len(s)-1]); err == nil {
+		numEnd := len(s) - 1
+		// Allow "min" suffix explicitly for minutes (avoids the m=months
+		// vs m=minutes ambiguity).
+		if strings.HasSuffix(s, "min") {
+			unit = 'i' // sentinel for minutes
+			numEnd = len(s) - 3
+		}
+		if n, err := strconv.Atoi(s[:numEnd]); err == nil {
 			now := time.Now()
 			switch unit {
+			case 'i':
+				return now.Add(-time.Duration(n) * time.Minute), nil
+			case 'h':
+				return now.Add(-time.Duration(n) * time.Hour), nil
 			case 'd':
 				return now.AddDate(0, 0, -n), nil
 			case 'w':
@@ -275,7 +290,7 @@ func parseDateOrDuration(s string) (time.Time, error) {
 			return t, nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("unrecognized date format (try YYYY-MM-DD or Nd/Nw/Nm/Ny)")
+	return time.Time{}, fmt.Errorf("unrecognized date format (try YYYY-MM-DD or Nmin/Nh/Nd/Nw/Nm/Ny)")
 }
 
 func filterByDate(records []analytics.Record, since, until time.Time) []analytics.Record {

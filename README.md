@@ -38,10 +38,17 @@ That's it. `td setup` handles every step:
 1. Generates and trusts a local CA cert (TouchID prompt on macOS)
 2. Installs a launchd LaunchAgent so the proxy auto-starts at login
 3. Appends `HTTPS_PROXY=http://127.0.0.1:8888` to your shell rc
-4. Removes any old `td hook claude` PreToolUse entry from `~/.claude/settings.json`
-5. Verifies end-to-end with a synthetic Anthropic round-trip
+4. Sets `HTTPS_PROXY` at the launchd level so macOS GUI apps see it (plus a persistence agent for reboots)
+5. Removes any old `td hook claude` PreToolUse entry from `~/.claude/settings.json`
+6. Verifies end-to-end with a synthetic Anthropic round-trip
 
-After it finishes, **restart Claude Code** so it picks up the new env var.
+**You must restart your AI client** after setup. Existing shells and running apps have their env locked at startup. Pick the path that matches you:
+
+- **Terminal claude CLI** — open a NEW terminal window and start `claude` there. Or one-shot: `HTTPS_PROXY=http://127.0.0.1:8888 claude`.
+- **Claude.app (Mac)** — quit fully (cmd-Q from menu) and relaunch with the Electron flag, since Electron ignores the standard env var:
+  ```bash
+  open -a Claude --args --proxy-server=http://127.0.0.1:8888 --proxy-bypass-list='<-loopback>'
+  ```
 
 To preview without changes: `td setup --dry-run`. To reverse: `td unsetup`.
 

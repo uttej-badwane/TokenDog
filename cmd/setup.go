@@ -7,13 +7,18 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"tokendog/internal/proxy"
 )
+
+// goos is a thin wrapper around runtime.GOOS so the test file can shim it.
+func goos() string { return runtime.GOOS }
 
 var (
 	setupDryRun bool
@@ -22,21 +27,23 @@ var (
 
 var setupCmd = &cobra.Command{
 	Use:   "setup",
-	Short: "One-command end-to-end install (cert + daemon + shell rc + hook migration)",
+	Short: "One-command end-to-end install (cert + daemon + shell rc + GUI env + hook migration)",
 	Long: `td setup is the friction-free path. Runs every step end users would
 otherwise do by hand:
 
   1. Generate + install the TokenDog CA cert into the system trust store
   2. Install the launchd LaunchAgent so the proxy auto-starts at login
   3. Append HTTPS_PROXY to your shell rc (~/.zshrc, ~/.bashrc, etc.)
-  4. Migrate the old PreToolUse hook out of ~/.claude/settings.json
-  5. Verify end-to-end with a synthetic Anthropic request
+  4. Set HTTPS_PROXY at the launchd level so GUI apps see it (macOS) +
+     install a persistence agent so it survives reboots
+  5. Migrate the old PreToolUse hook out of ~/.claude/settings.json
+  6. Verify end-to-end with a synthetic Anthropic request
 
 Idempotent — re-running is safe. Use --dry-run to preview every change
 without touching anything. Use td unsetup to reverse.
 
-After setup, restart Claude Code (or your AI client) so it picks up the
-new HTTPS_PROXY env var.`,
+After setup completes, you MUST restart your AI client to pick up the
+new HTTPS_PROXY env var. The detailed restart steps print at the end.`,
 	RunE: runSetup,
 }
 
@@ -52,7 +59,7 @@ func init() {
 }
 
 func runSetup(_ *cobra.Command, _ []string) error {
-	fmt.Println("TokenDog setup — five steps. Re-runnable, idempotent.")
+	fmt.Println("TokenDog setup — six steps. Re-runnable, idempotent.")
 	fmt.Println()
 
 	// Step 1: cert
@@ -90,24 +97,124 @@ func runSetup(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Step 4: migrate hook
-	if err := setupStep(4, "Remove the legacy PreToolUse hook (proxy supersedes it)", removeHookFromSettings); err != nil {
+	// Step 4: GUI app env (launchctl setenv + persistence plist)
+	if err := setupStep(4, "Set HTTPS_PROXY for macOS GUI apps", installGUIProxyEnv); err != nil {
+		// Non-macOS — not fatal. Just continue.
+		fmt.Printf("  (skipping on non-macOS or insufficient permissions)\n")
+	}
+
+	// Step 5: migrate hook
+	if err := setupStep(5, "Remove the legacy PreToolUse hook (proxy supersedes it)", removeHookFromSettings); err != nil {
 		return err
 	}
 
-	// Step 5: verify
-	if err := setupStep(5, "Verify proxy interception with a synthetic request", verifyProxy); err != nil {
+	// Step 6: verify
+	if err := setupStep(6, "Verify proxy interception with a synthetic request", verifyProxy); err != nil {
 		// Verify failure isn't fatal — it can mean the daemon hasn't
 		// finished starting. We surface the issue but don't unwind the
-		// other 4 steps.
+		// other 5 steps.
 		fmt.Printf("  (verify failed: %v — give the daemon ~5s to start and run `td proxy daemon status`)\n", err)
 	}
 
-	fmt.Println()
-	fmt.Println("Setup complete. Restart Claude Code so it picks up the new HTTPS_PROXY.")
-	fmt.Println("Run `td gain --since 1d` after a session to see proxy savings.")
+	printPostSetupInstructions()
 	return nil
 }
+
+// printPostSetupInstructions explains the most important point users miss:
+// running shells and running apps don't automatically pick up the new env.
+// We spell out the exact command for each entry point.
+func printPostSetupInstructions() {
+	fmt.Println()
+	fmt.Println("Setup complete. The most important step is next:")
+	fmt.Println()
+	fmt.Println("  RESTART YOUR AI CLIENT")
+	fmt.Println()
+	fmt.Println("Existing terminal shells and running apps have their env fixed at")
+	fmt.Println("startup time — they won't see the new HTTPS_PROXY. Pick the path")
+	fmt.Println("that matches how you use claude:")
+	fmt.Println()
+	fmt.Println("  Terminal claude CLI")
+	fmt.Println("    Option A: open a NEW terminal window, then start claude there.")
+	fmt.Println("    Option B: in your current shell, prefix the env on launch:")
+	fmt.Println("              HTTPS_PROXY=http://127.0.0.1:8888 claude")
+	fmt.Println()
+	fmt.Println("  Claude.app (Mac desktop)")
+	fmt.Println("    Quit fully (cmd-Q from menu, not just close window). Relaunch")
+	fmt.Println("    via the dock or via:")
+	fmt.Println("              open -a Claude --args \\")
+	fmt.Println("                --proxy-server=http://127.0.0.1:8888 \\")
+	fmt.Println("                --proxy-bypass-list='<-loopback>'")
+	fmt.Println("    (Claude.app is Electron-based; HTTPS_PROXY env is ignored,")
+	fmt.Println("     so the --proxy-server flag is the canonical way.)")
+	fmt.Println()
+	fmt.Println("After your client is restarted, run:")
+	fmt.Println("    tail -f ~/.config/tokendog/proxy.log    # watch live activity")
+	fmt.Println("    td gain --since 1h                      # see proxy savings")
+}
+
+// installGUIProxyEnv sets HTTPS_PROXY at the launchd level so GUI apps
+// (Mac desktop apps started from Finder/Dock) inherit it. Plus writes a
+// persistence LaunchAgent so the setting survives reboots. macOS-only;
+// the agent itself is a no-op shell script so this is safe.
+func installGUIProxyEnv() (string, error) {
+	if runtimeGOOS() != "darwin" {
+		return "", fmt.Errorf("not macOS")
+	}
+	// 1. Set for the current launchd session.
+	for _, name := range []string{"HTTPS_PROXY", "https_proxy"} {
+		if err := launchctlSetenv(name, "http://127.0.0.1:8888"); err != nil {
+			return "", err
+		}
+	}
+	// 2. Write a persistence agent that re-applies the setenv at every
+	// user login. This is a separate plist from the proxy daemon — its
+	// only job is to call launchctl setenv on each load.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", "com.tokendog.proxyenv.plist")
+	plist := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tokendog.proxyenv</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <string>launchctl setenv HTTPS_PROXY http://127.0.0.1:8888 &amp;&amp; launchctl setenv https_proxy http://127.0.0.1:8888</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
+`
+	if err := os.MkdirAll(filepath.Dir(plistPath), 0755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(plistPath, []byte(plist), 0644); err != nil {
+		return "", err
+	}
+	// Bootstrap (idempotent — bootout first, then bootstrap).
+	target := fmt.Sprintf("gui/%d", os.Getuid())
+	_ = exec.Command("launchctl", "bootout", target+"/com.tokendog.proxyenv").Run()
+	if err := exec.Command("launchctl", "bootstrap", target, plistPath).Run(); err != nil {
+		// Non-fatal — the setenv we did in step 1 is still in effect for
+		// this login session.
+		return plistPath + " (current session set; persistence plist install warning: " + err.Error() + ")", nil
+	}
+	return plistPath, nil
+}
+
+func launchctlSetenv(name, value string) error {
+	return exec.Command("launchctl", "setenv", name, value).Run()
+}
+
+// runtimeGOOS is wrapped so tests can stub it. Direct runtime.GOOS works
+// fine in production.
+func runtimeGOOS() string { return goos() }
 
 // setupStep is the per-step UX wrapper. Prints "[N/5] description...",
 // runs the action, prints success/failure with the result string. In
@@ -335,7 +442,11 @@ func runUnsetup(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	if err := setupStep(3, "Remove CA cert from system trust store", func() (string, error) {
+	if err := setupStep(3, "Unset HTTPS_PROXY for GUI apps + remove persistence agent", uninstallGUIProxyEnv); err != nil {
+		// Non-fatal on non-macOS.
+	}
+
+	if err := setupStep(4, "Remove CA cert from system trust store", func() (string, error) {
 		return "", proxy.UninstallCert()
 	}); err != nil {
 		return err
@@ -345,6 +456,23 @@ func runUnsetup(_ *cobra.Command, _ []string) error {
 	fmt.Println("Done. Open a new shell so HTTPS_PROXY clears, then restart Claude Code.")
 	fmt.Println("Cert files at ~/.config/tokendog/proxy/ are kept; delete manually if you want them gone.")
 	return nil
+}
+
+func uninstallGUIProxyEnv() (string, error) {
+	if runtimeGOOS() != "darwin" {
+		return "", fmt.Errorf("not macOS")
+	}
+	target := fmt.Sprintf("gui/%d/com.tokendog.proxyenv", os.Getuid())
+	_ = exec.Command("launchctl", "bootout", target).Run()
+	for _, name := range []string{"HTTPS_PROXY", "https_proxy"} {
+		_ = exec.Command("launchctl", "unsetenv", name).Run()
+	}
+	home, _ := os.UserHomeDir()
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", "com.tokendog.proxyenv.plist")
+	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
+	return "removed", nil
 }
 
 func removeShellRC() (string, error) {
