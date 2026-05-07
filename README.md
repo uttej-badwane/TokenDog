@@ -38,7 +38,7 @@ That's it. `td setup` handles every step:
 1. Generates and trusts a local CA cert (TouchID prompt on macOS)
 2. Installs a launchd LaunchAgent so the proxy auto-starts at login
 3. Appends `HTTPS_PROXY=http://127.0.0.1:8888` to your shell rc
-4. Removes any legacy `td hook claude` PreToolUse entry from `~/.claude/settings.json`
+4. Removes any old `td hook claude` PreToolUse entry from `~/.claude/settings.json`
 5. Verifies end-to-end with a synthetic Anthropic round-trip
 
 After it finishes, **restart Claude Code** so it picks up the new env var.
@@ -103,16 +103,10 @@ Cache safety: only the **last** `tool_result` in the request is filtered. Anthro
 
 ## Honest savings expectations
 
-The README of older versions claimed "$450/dev/month at Opus pricing." That number was extrapolated from heavy-CLI workflows and didn't reflect typical usage.
-
-The honest framing:
 - Tool output (the part TD touches) is typically **30-50% of your Anthropic bill**.
 - Per-tool reduction is 30-90% on the bytes TD compresses.
 - Net bill reduction in proxy mode for a typical user: **5-15%** depending on how tool-output-heavy the workflow is.
-- Run `td replay` against your own transcripts to get your specific number.
-- Run `td gain --with-spend` after a session for "you spent $X; td saved $Y of it" cross-referenced with [ccusage](https://github.com/ryoppippi/ccusage).
-
-The hook mode (the legacy approach where TD wraps Bash commands as `td git status`) caps savings around 0.1-1% of bill because it only touches Bash output. If you've seen low numbers there, switch to proxy mode via `td setup`.
+- Run `td replay` against your own transcripts to get your specific number for your actual workflow.
 
 ## Three commands worth knowing
 
@@ -124,8 +118,7 @@ td gain --since 7d         # last week
 td gain --by-model         # opus / sonnet / haiku split
 td gain --by-project       # cross-repo breakdown (.git-rooted detection)
 td gain --daily            # day-by-day time series
-td gain --with-spend       # joined with ccusage's bill data
-td gain --json             # pipeable to jq, dashboards
+td gain --json             # pipeable to jq or dashboards
 ```
 
 ### `td replay` — counterfactual: "what if I'd had td running all year?"
@@ -155,34 +148,6 @@ Most users only run these via `td setup` — they're here for when something bre
 The proxy sees every byte of every Anthropic API request — including conversation content, tool outputs, and any pasted secrets. Nothing leaves your machine; analytics writes to `~/.config/tokendog/` only. See [SECURITY.md](SECURITY.md) for the full data flow and threat model.
 
 The `redact` package scrubs AWS keys, GitHub tokens, Slack tokens, JWTs, and PEM blocks from `td purge --redact` and `td replay --redact` output. The proxy itself does not redact in-flight content (the model needs the originals to do its job).
-
-## How does this compare to ccusage?
-
-[ccusage](https://github.com/ryoppippi/ccusage) tells you what you spent. TokenDog tells you how much less you would have spent if your tool output had been filtered. They're complementary — run both. `td gain --with-spend` reads ccusage's data and joins it with TD's savings.
-
-## Hook mode (legacy)
-
-Before v0.10.0, TD ran as a Claude Code PreToolUse hook that wrapped every Bash command with `td <tool>`. That mode is still supported — useful for users who can't install a CA cert (regulated environments, organizational policy):
-
-```bash
-# Skip the proxy. Wire TD as a hook instead.
-# Add to ~/.claude/settings.json:
-{
-  "hooks": {
-    "PreToolUse": [{
-      "matcher": "Bash",
-      "hooks": [{ "type": "command", "command": "td hook claude" }]
-    }]
-  }
-}
-```
-
-Hook mode trade-offs:
-- ✓ No cert install, no daemon, no proxy.
-- ✗ Visible: `td git status` shows up in shell history and Claude transcripts.
-- ✗ Limited to Bash output (~5-8% of total tokens), not all tool results.
-
-Most users should run proxy mode via `td setup`. Hook mode exists for environments where the proxy's TLS interception is a non-starter.
 
 ## MCP integration (Claude Desktop)
 
@@ -219,7 +184,7 @@ Filter dispatch is a single registry (`internal/filter/registrations.go`). Addin
 
 Active. Recent changes in [CHANGELOG.md](CHANGELOG.md).
 
-Looking for help with: more filters (`cat`, `helm`, `psql`, `dig` would all be useful), Linux launchd-equivalent (systemd user units), Windows scheduled-task auto-install, ccusage MCP integration. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Looking for help with: more filters (`cat`, `helm`, `psql`, `dig` would all be useful), Linux launchd-equivalent (systemd user units), Windows scheduled-task auto-install. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

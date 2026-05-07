@@ -1,12 +1,13 @@
 package proxy
 
 import (
+	"bytes"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"regexp"
-	"strings"
 
 	"github.com/elazarl/goproxy"
 )
@@ -128,60 +129,26 @@ func (s *Server) ListenAndServe() error {
 // Kept short; full-body buffering is fine here because Anthropic Messages
 // requests are bounded by their context-window size.
 
+// readAllBody slurps the entire request body. Bounded by maxBody to
+// defend against pathological input. Uses io.ReadAll under a LimitReader
+// rather than rolling our own loop so we get io.EOF semantics for free —
+// rolling our own previously returned a non-io.EOF error which broke
+// downstream HTTP transport (it treats non-io.EOF as "connection bad,
+// retry" and the retry hit phantom failures).
 func readAllBody(r *http.Request) ([]byte, error) {
 	if r.Body == nil {
 		return nil, nil
 	}
 	defer r.Body.Close()
-	const maxBody = 32 << 20 // 32 MB; way larger than any realistic request
-	body := make([]byte, 0, 64*1024)
-	buf := make([]byte, 32*1024)
-	for {
-		n, err := r.Body.Read(buf)
-		if n > 0 {
-			if len(body)+n > maxBody {
-				return nil, fmt.Errorf("request body exceeds %d bytes", maxBody)
-			}
-			body = append(body, buf[:n]...)
-		}
-		if err != nil {
-			if err.Error() == "EOF" || strings.Contains(err.Error(), "EOF") {
-				return body, nil
-			}
-			return body, err
-		}
-	}
+	const maxBody = 32 << 20
+	return io.ReadAll(io.LimitReader(r.Body, maxBody))
 }
 
+// replaceBody substitutes the request body. Uses io.NopCloser around a
+// bytes.Reader — both are stdlib, both correctly return io.EOF.
 func replaceBody(r *http.Request, body []byte) *http.Request {
-	r.Body = nopCloser{readerFromBytes(body)}
+	r.Body = io.NopCloser(bytes.NewReader(body))
 	r.ContentLength = int64(len(body))
 	r.Header.Set("Content-Length", fmt.Sprintf("%d", len(body)))
 	return r
-}
-
-type nopCloser struct{ readBuf }
-
-func (nopCloser) Close() error { return nil }
-
-type readBuf interface {
-	Read(p []byte) (int, error)
-}
-
-func readerFromBytes(b []byte) readBuf {
-	return &byteReader{b: b}
-}
-
-type byteReader struct {
-	b []byte
-	i int
-}
-
-func (br *byteReader) Read(p []byte) (int, error) {
-	if br.i >= len(br.b) {
-		return 0, fmt.Errorf("EOF")
-	}
-	n := copy(p, br.b[br.i:])
-	br.i += n
-	return n, nil
 }
