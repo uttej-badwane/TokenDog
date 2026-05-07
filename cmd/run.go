@@ -50,10 +50,13 @@ func runFiltered(binary string, args []string, recordPrefix string) error {
 	filtered, _ := filter.Apply(binary, args, raw)
 	fmt.Print(filtered)
 
-	// Only cache successful runs. Errors may resolve (transient network,
-	// permission flaps) and we don't want stale failures returning silent
-	// "cache hits" of broken state.
-	if err == nil {
+	// Only cache successful runs with non-empty output. Errors may resolve
+	// (transient network, permission flaps) and we don't want stale
+	// failures returning silent "cache hits" of broken state. Empty output
+	// (e.g. git add, npm install on already-installed deps) shouldn't be
+	// cached either: the cache-hit marker itself is ~120 bytes, so a
+	// "hit" on empty raw is net-negative for analytics.
+	if err == nil && len(raw) > 0 {
 		cache.Set(key, cache.Entry{
 			Command:   cmdLabel,
 			CWD:       cwdSafe(),
