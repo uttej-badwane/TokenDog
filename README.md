@@ -9,158 +9,217 @@
    ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝  ╚═════╝  ╚═════╝
 ```
 
-**A CLI proxy that filters Bash output before it reaches your AI assistant's context window.**
+**A local HTTPS proxy that filters tool output before it reaches your AI assistant's context window.**
 
 [![Release](https://img.shields.io/github/v/release/uttej-badwane/TokenDog)](https://github.com/uttej-badwane/TokenDog/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Claude Code (or Cursor, Cline, Aider) runs hundreds of `git`, `ls`, `find`, `gh`, `kubectl`, `aws` commands per session. Each one's stdout becomes input tokens on the next turn. TokenDog sits in the hook path, applies tool-specific compression, and reduces what your assistant has to ingest — losslessly, before any tokens are charged.
+TokenDog runs as a local HTTPS proxy between your AI assistant (Claude Code, Cursor, Cline, anything respecting `HTTPS_PROXY`) and `api.anthropic.com`. It intercepts every request the assistant sends, finds the `tool_result` content blocks the model is about to be charged for, and applies tool-specific compression — losslessly, before any tokens are billed.
 
 ```
-$ td replay
-TokenDog Hindsight
-Replayed:                  107 sessions, 3,572 Bash calls (1,743 handled)
-Output volume:             1.9MB raw → 1.6MB filtered
-Would-have-saved:          95,620 tokens (16.1%)
-Projected cost saved:      $1.43 at $15/M (Opus 4.7 standard)
+$ td gain --since 1d
+TokenDog Savings (last 24h)
+══════════════════════════════════════════════════════════
+Total commands:     142 (proxy: 138, hook: 4)
+Saved:              48.2KB (12,403 tokens, 18.7%)
+Cost saved:         $0.19 (per-model rates, cl100k)
 ```
 
 ## Install
 
 ```bash
-brew tap uttej-badwane/tokendog && brew install tokendog
+brew tap uttej-badwane/tokendog
+brew install tokendog
+td setup
 ```
 
-Or grab a binary directly:
+That's it. `td setup` handles every step:
+
+1. Generates and trusts a local CA cert (TouchID prompt on macOS)
+2. Installs a launchd LaunchAgent so the proxy auto-starts at login
+3. Appends `HTTPS_PROXY=http://127.0.0.1:8888` to your shell rc
+4. Removes any legacy `td hook claude` PreToolUse entry from `~/.claude/settings.json`
+5. Verifies end-to-end with a synthetic Anthropic round-trip
+
+After it finishes, **restart Claude Code** so it picks up the new env var.
+
+To preview without changes: `td setup --dry-run`. To reverse: `td unsetup`.
+
+### Other install paths
+
 ```bash
+# Without brew
 curl -fsSL https://raw.githubusercontent.com/uttej-badwane/TokenDog/main/scripts/install.sh | sh
-```
 
-Or pull the Docker image:
-```bash
+# Docker
 docker pull ghcr.io/uttej-badwane/tokendog:latest
 ```
 
-## Set up the hook
+Linux/Windows: `td setup` works for everything except cert install + launchd, which are macOS-only today (the command prints platform-specific manual steps for those).
 
-Add to `~/.claude/settings.json`:
+## How it works
 
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": "td hook claude" }]
-      }
-    ]
-  }
-}
+```
+Claude Code (or any AI client respecting HTTPS_PROXY)
+                    │
+                    ▼  HTTPS_PROXY=http://127.0.0.1:8888
+            ┌──────────────────┐
+            │ TokenDog proxy   │   localhost daemon, MITMs api.anthropic.com only
+            │  - parse Messages│
+            │    API request   │
+            │  - filter        │   Per-tool compaction: git status, gh api, kubectl,
+            │    tool_result[] │   terraform plan, find, ls, jq, curl, ~25 in total
+            │  - re-serialize  │
+            └────────┬─────────┘
+                     │ filtered payload
+                     ▼
+              api.anthropic.com
 ```
 
-That's it. Run `td welcome` to verify everything is wired up.
+The proxy MITMs **only** `api.anthropic.com:443` — every other host's CONNECT is tunneled through unchanged. Trust footprint stays small.
 
-## What's filtered
+Cache safety: only the **last** `tool_result` in the request is filtered. Anthropic's prompt cache hashes content; modifying historical content would invalidate the cache and net cost would go *up*. The last message contains content not yet seen by the API, so filtering it is a pure win.
 
-| Tool | Strategy | Real-world savings |
+## What gets filtered
+
+| Tool | Strategy | Real-world reduction |
 |---|---|---|
-| `git status/log/diff/branch` | Strip hints, compact format, drop `index abc..def` metadata | 30–85% |
-| `gh pr/issue/run list` | Column-padding normalization (bodies untouched) | 30–60% |
-| `gh api`, `aws/gcloud/az` | Lossless JSON re-marshal | 30–80% |
-| `kubectl get/describe/top` | Table compression, blank-line collapse | 20–60% |
-| `ls -la` | Drop permissions, owner, timestamps | 55–70% |
-| `find` | Group paths by directory, skip `.git` / `node_modules` | 70–95% |
-| `pytest` / `jest` / `vitest` / `go test` / `cargo test` | Collapse to summary on all-pass; verbatim on any failure | 60–95% |
-| `npm` / `pnpm` / `yarn` / `pip` / `cargo build` | Drop fetch/progress noise | 40–80% |
-| `jq`, `curl` (JSON) | Lossless compaction, no indentation | 40–70% |
-| `docker ps/images` | Compact tables | 20–40% |
-| `make` | Drop successful-compile lines, keep warnings/errors | 30–70% |
+| `git status/log/diff/branch` | Compact format, drop `index abc..def` metadata | 30-85% |
+| `gh pr/issue/run list` | Column-padding normalization, JSON compaction on `gh api` | 30-60% |
+| `gh run view --log` | Strip per-line `job\tstep\ttimestamp` prefix repetition | 40-60% |
+| `aws/gcloud/az` | Lossless JSON re-marshal, table normalization | 30-80% |
+| `kubectl get/describe/top` | Table compaction, blank-line collapse | 20-60% |
+| `terraform/tofu plan/apply` | Drop refresh + apply-progress spam, preserve resource diffs verbatim | 40-70% |
+| `ls -la` | Drop permissions, owner, timestamps | 55-70% |
+| `find` | Group paths by directory, skip `.git` / `node_modules` | 70-95% |
+| `grep -rn` | Group matches by file path, dedupe path strings | 30-50% |
+| `pytest/jest/vitest/go test/cargo test` | Collapse to summary on all-pass; verbatim on any failure | 60-95% |
+| `npm/pnpm/yarn/pip` | Drop fetch/progress noise | 40-80% |
+| `jq, curl` (JSON) | Lossless compaction, no indentation | 40-70% |
+| `docker ps/images` | Compact tables | 20-40% |
+| `make` | Drop successful-compile lines, keep warnings/errors verbatim | 30-70% |
 
-**Lossless principle**: TokenDog never silently drops content. It restructures and removes structural noise. If filtering would lose data, the original passes through unchanged. Every filter has the `Guard` invariant: output bytes ≤ input bytes.
+**Lossless principle**: TokenDog never silently drops content. It restructures and removes structural noise. If filtering would lose data, the original passes through unchanged. Every filter has the universal `Guard` invariant: output bytes ≤ input bytes.
+
+## Honest savings expectations
+
+The README of older versions claimed "$450/dev/month at Opus pricing." That number was extrapolated from heavy-CLI workflows and didn't reflect typical usage.
+
+The honest framing:
+- Tool output (the part TD touches) is typically **30-50% of your Anthropic bill**.
+- Per-tool reduction is 30-90% on the bytes TD compresses.
+- Net bill reduction in proxy mode for a typical user: **5-15%** depending on how tool-output-heavy the workflow is.
+- Run `td replay` against your own transcripts to get your specific number.
+- Run `td gain --with-spend` after a session for "you spent $X; td saved $Y of it" cross-referenced with [ccusage](https://github.com/ryoppippi/ccusage).
+
+The hook mode (the legacy approach where TD wraps Bash commands as `td git status`) caps savings around 0.1-1% of bill because it only touches Bash output. If you've seen low numbers there, switch to proxy mode via `td setup`.
 
 ## Three commands worth knowing
 
 ### `td gain` — your savings, accurately priced
 
 ```bash
-td gain                    # all-time totals, with calibrated USD per model
-td gain --by-model         # opus vs haiku vs sonnet split
-td gain --daily            # day-by-day breakdown
+td gain                    # all-time totals, per-model rates
 td gain --since 7d         # last week
-td gain --json             # pipeable to jq, dashboards, ccusage
-td gain --session=current  # this Claude session only
+td gain --by-model         # opus / sonnet / haiku split
+td gain --by-project       # cross-repo breakdown (.git-rooted detection)
+td gain --daily            # day-by-day time series
+td gain --with-spend       # joined with ccusage's bill data
+td gain --json             # pipeable to jq, dashboards
 ```
-
-Per-model pricing (`internal/pricing`) tracks Opus 4.7, Sonnet 4.6, Haiku 4.5, plus older models, with input/output/cache rates. The headline cost line uses each session's actual model — no hardcoded $15/M assumption.
 
 ### `td replay` — counterfactual: "what if I'd had td running all year?"
 
 ```bash
-td replay              # walk every transcript at ~/.claude/projects/
-td replay --days 30    # last 30 days
-td replay --json       # machine-readable
+td replay                  # walk every transcript at ~/.claude/projects/
+td replay --since 30d      # last 30 days
+td replay --json           # machine-readable
 ```
 
-Reads your historical Claude transcripts, replays each Bash tool_result through current filters, and tells you what TD would have saved. Also surfaces the top unhandled binaries (your priority list for new filter contributions).
+Reads your historical Claude transcripts, replays each Bash tool_result through current filters, and shows what TD would have saved. Surfaces the top unhandled binaries (your priority list for new filter contributions).
 
-### `td discover` — coverage audit
+### `td proxy` — the proxy lifecycle
 
 ```bash
-td discover    # which Bash commands in your history bypassed td
+td proxy daemon status       # is the launchd agent running?
+td proxy daemon install      # (re)install the LaunchAgent
+td proxy daemon uninstall    # stop and remove the agent
+td proxy install-cert        # (re)install the CA cert
+td proxy start               # run in foreground (Ctrl-C to stop)
 ```
 
-Catches misconfigured hooks. If `gh: 70 calls, 0% coverage` shows up, your hook isn't matching.
+Most users only run these via `td setup` — they're here for when something breaks or you want to inspect state.
+
+## Privacy
+
+The proxy sees every byte of every Anthropic API request — including conversation content, tool outputs, and any pasted secrets. Nothing leaves your machine; analytics writes to `~/.config/tokendog/` only. See [SECURITY.md](SECURITY.md) for the full data flow and threat model.
+
+The `redact` package scrubs AWS keys, GitHub tokens, Slack tokens, JWTs, and PEM blocks from `td purge --redact` and `td replay --redact` output. The proxy itself does not redact in-flight content (the model needs the originals to do its job).
 
 ## How does this compare to ccusage?
 
-[ccusage](https://github.com/ryoppippi/ccusage) tells you what you spent. TokenDog tells you how much less you would have spent if your tool output had been filtered. They're complementary — run both.
+[ccusage](https://github.com/ryoppippi/ccusage) tells you what you spent. TokenDog tells you how much less you would have spent if your tool output had been filtered. They're complementary — run both. `td gain --with-spend` reads ccusage's data and joins it with TD's savings.
 
-`td gain --json` and `td replay --json` are designed to flow into ccusage-style dashboards.
+## Hook mode (legacy)
 
-## Cost math
+Before v0.10.0, TD ran as a Claude Code PreToolUse hook that wrapped every Bash command with `td <tool>`. That mode is still supported — useful for users who can't install a CA cert (regulated environments, organizational policy):
 
-The README of older versions claimed "$450/dev/month at Opus pricing." That number was extrapolated from a heavy-workload sample and didn't reflect typical usage. The honest answer:
+```bash
+# Skip the proxy. Wire TD as a hook instead.
+# Add to ~/.claude/settings.json:
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Bash",
+      "hooks": [{ "type": "command", "command": "td hook claude" }]
+    }]
+  }
+}
+```
 
-> Run `td replay` against your own transcripts. Whatever number it shows is your actual potential savings on the data you've already generated. Most users will see $1–$30/month; heavy `aws describe-*` / `kubectl get -o json` / `gh run view --log` workloads see 5–10×.
+Hook mode trade-offs:
+- ✓ No cert install, no daemon, no proxy.
+- ✗ Visible: `td git status` shows up in shell history and Claude transcripts.
+- ✗ Limited to Bash output (~5-8% of total tokens), not all tool results.
 
-Going forward, `td gain` accumulates real numbers as you use the tool, and per-model pricing makes the dollar figure trustworthy.
+Most users should run proxy mode via `td setup`. Hook mode exists for environments where the proxy's TLS interception is a non-starter.
+
+## MCP integration (Claude Desktop)
+
+```bash
+td mcp install     # adds tokendog to claude_desktop_config.json
+td mcp doctor      # diagnoses Claude Desktop wiring
+```
+
+Exposes 5 tools to Claude Desktop so you can ask "how much has TokenDog saved me this week?" in chat. See [td mcp](#mcp-integration-claude-desktop) for the per-tool list.
 
 ## Architecture
 
 ```
-~/.claude/settings.json
-        │ Bash command
-        ▼
-┌──────────────────┐
-│ td hook claude   │   PreToolUse hook
-│  - splitChain    │   (chain operators, bash -c, env vars)
-│  - rewrite       │
-│  - inject session│
-└────────┬─────────┘
-         │ rewritten command
-         ▼
-┌──────────────────┐
-│ td <tool> <args> │
-│  - cache check   │   30s TTL, env-aware
-│  - exec wrapped  │
-│  - filter.Apply  │   registry → tool-specific filter
-│  - Guard         │   lossless invariant
-│  - analytics     │   per-record token counts via cl100k
-│  - cache write   │
-└──────────────────┘
+.
+├── cmd/                       cobra subcommands
+├── internal/
+│   ├── analytics/             history.jsonl + per-model aggregation
+│   ├── cache/                 30s output cache for repeated commands (hook mode)
+│   ├── filter/                ~25 per-tool compactors + universal Guard
+│   ├── hook/                  PreToolUse rewrite logic + bash chain parsing
+│   ├── mcpconfig/             Claude Desktop config management
+│   ├── pricing/               embedded Anthropic model pricing
+│   ├── proxy/                 HTTPS proxy + cert + launchd
+│   ├── redact/                secret-scrubbing regex pack
+│   ├── replay/                transcript walker + counterfactual savings
+│   ├── tokenizer/             cl100k via tiktoken-go (Anthropic proxy ~10%)
+│   └── transcript/            Claude session JSONL parser
+└── scripts/install.sh         brew-less installer
 ```
 
-Filter dispatch is a single registry (`internal/filter/registrations.go`). Adding a filter is one source file + one line in registrations + one entry in `hook.Supported`. See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Privacy
-
-`td replay` reads your historical Claude transcripts, which may contain pasted secrets. TokenDog runs entirely offline (no telemetry, no network) and writes only to `~/.config/tokendog/`. See [SECURITY.md](SECURITY.md) for the full data flow and threat model.
+Filter dispatch is a single registry (`internal/filter/registrations.go`). Adding a filter is one file + one line in registrations + one entry in `hook.Supported`. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Status
 
 Active. Recent changes in [CHANGELOG.md](CHANGELOG.md).
 
-Looking for help with: more filters (`grep`, `cat`, `terraform`, `psql`, `helm` would all be useful), MCP server for Claude Desktop integration, Linux package repos. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Looking for help with: more filters (`cat`, `helm`, `psql`, `dig` would all be useful), Linux launchd-equivalent (systemd user units), Windows scheduled-task auto-install, ccusage MCP integration. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

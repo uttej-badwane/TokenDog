@@ -85,4 +85,6 @@ func init() {
 	rootCmd.AddCommand(tofuCmd)
 	rootCmd.AddCommand(purgeCmd)
 	rootCmd.AddCommand(proxyCmd)
+	rootCmd.AddCommand(setupCmd)
+	rootCmd.AddCommand(unsetupCmd)
 }
