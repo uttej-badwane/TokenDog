@@ -84,4 +84,5 @@ func init() {
 	rootCmd.AddCommand(terraformCmd)
 	rootCmd.AddCommand(tofuCmd)
 	rootCmd.AddCommand(purgeCmd)
+	rootCmd.AddCommand(proxyCmd)
 }
