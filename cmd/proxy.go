@@ -65,10 +65,73 @@ shipped). For now: ` + "`nohup td proxy start &`" + ` works fine.`,
 	RunE: runProxyStart,
 }
 
+var proxyDaemonCmd = &cobra.Command{
+	Use:   "daemon",
+	Short: "Manage the proxy as an auto-starting background service",
+	Long: `Subcommands install/uninstall/status the proxy as a launchd LaunchAgent
+on macOS. The agent starts at login and respawns if the proxy crashes.
+Linux and Windows print platform-specific manual setup instructions.
+
+  td proxy daemon install     # write plist, load via launchctl
+  td proxy daemon status      # is it running? what's the PID?
+  td proxy daemon uninstall   # bootout + remove plist`,
+}
+
+var proxyDaemonInstallCmd = &cobra.Command{
+	Use:   "install",
+	Short: "Install the proxy as a launchd LaunchAgent (macOS)",
+	RunE:  runProxyDaemonInstall,
+}
+
+var proxyDaemonUninstallCmd = &cobra.Command{
+	Use:   "uninstall",
+	Short: "Stop the LaunchAgent and remove the plist",
+	RunE:  runProxyDaemonUninstall,
+}
+
+var proxyDaemonStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Report whether the LaunchAgent is loaded + the proxy's PID",
+	RunE:  runProxyDaemonStatus,
+}
+
 func init() {
 	proxyCmd.AddCommand(proxyInstallCertCmd)
 	proxyCmd.AddCommand(proxyUninstallCertCmd)
 	proxyCmd.AddCommand(proxyStartCmd)
+	proxyCmd.AddCommand(proxyDaemonCmd)
+	proxyDaemonCmd.AddCommand(proxyDaemonInstallCmd)
+	proxyDaemonCmd.AddCommand(proxyDaemonUninstallCmd)
+	proxyDaemonCmd.AddCommand(proxyDaemonStatusCmd)
+}
+
+func runProxyDaemonInstall(_ *cobra.Command, _ []string) error {
+	plistPath, err := proxy.DaemonInstall()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("✓ LaunchAgent installed: %s\n", plistPath)
+	fmt.Println("  Auto-starts at login. Respawns if the proxy crashes (10s throttle).")
+	fmt.Println("  Logs: ~/.config/tokendog/proxy.log")
+	fmt.Println("  Status: td proxy daemon status")
+	return nil
+}
+
+func runProxyDaemonUninstall(_ *cobra.Command, _ []string) error {
+	if err := proxy.DaemonUninstall(); err != nil {
+		return err
+	}
+	fmt.Println("✓ LaunchAgent removed. The proxy will not auto-start at next login.")
+	return nil
+}
+
+func runProxyDaemonStatus(_ *cobra.Command, _ []string) error {
+	status, err := proxy.DaemonStatus()
+	if err != nil {
+		return err
+	}
+	fmt.Println(status)
+	return nil
 }
 
 func runProxyInstallCert(_ *cobra.Command, _ []string) error {
