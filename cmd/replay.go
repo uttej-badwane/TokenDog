@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"tokendog/internal/filter"
 	"tokendog/internal/hook"
+	"tokendog/internal/redact"
 	"tokendog/internal/replay"
 )
 
@@ -20,6 +21,7 @@ var (
 	replayTopN        int
 	replayPriceM      float64
 	replayJSON        bool
+	replayRedact      bool
 )
 
 var replayCmd = &cobra.Command{
@@ -40,6 +42,7 @@ func init() {
 	replayCmd.Flags().IntVar(&replayTopN, "top", 15, "How many top commands to show in the breakdown")
 	replayCmd.Flags().Float64Var(&replayPriceM, "price-per-million", 15.0, "$ per million input tokens (Opus 4.7 standard = 15)")
 	replayCmd.Flags().BoolVar(&replayJSON, "json", false, "Emit JSON instead of the human-readable table")
+	replayCmd.Flags().BoolVar(&replayRedact, "redact", false, "Scrub AWS keys, GitHub tokens, JWTs, and PEM blocks from the per-command output")
 }
 
 func runReplay(_ *cobra.Command, _ []string) error {
@@ -152,6 +155,9 @@ func renderReplay(r *replay.Result, topN int, pricePerM float64) string {
 		}
 		cmdUSD := float64(ts) / 1_000_000 * pricePerM
 		name := c.Name
+		if replayRedact {
+			name = redact.Redacted(name)
+		}
 		if len(name) > 26 {
 			name = name[:23] + "..."
 		}

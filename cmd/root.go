@@ -81,4 +81,7 @@ func init() {
 	rootCmd.AddCommand(azCmd)
 	rootCmd.AddCommand(makeCmd)
 	rootCmd.AddCommand(grepCmd)
+	rootCmd.AddCommand(terraformCmd)
+	rootCmd.AddCommand(tofuCmd)
+	rootCmd.AddCommand(purgeCmd)
 }

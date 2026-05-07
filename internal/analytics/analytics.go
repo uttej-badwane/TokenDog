@@ -37,6 +37,35 @@ type Record struct {
 	// when first resolved so the same lookup isn't repeated. Empty for
 	// records whose transcript was unreachable.
 	Model string `json:"model,omitempty"`
+	// CWD captures the working directory at exec time. Used by
+	// `td gain --by-project` to group records by project — Project()
+	// resolves cwd to the deepest .git-rooted directory above it, so
+	// runs from any subdir of a repo land in the same bucket.
+	CWD string `json:"cwd,omitempty"`
+}
+
+// Project resolves r.CWD to a project name. Walks up from CWD looking for
+// a .git directory; if found, returns its parent dir's basename. If not
+// found, returns the basename of CWD itself. Empty CWD returns "unknown".
+//
+// Cached results would be nice but the call site is `td gain` which runs
+// once per invocation, not on the hot path.
+func (r Record) Project() string {
+	if r.CWD == "" {
+		return "unknown"
+	}
+	dir := r.CWD
+	for {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			return filepath.Base(dir)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return filepath.Base(r.CWD)
 }
 
 func (r Record) BytesSaved() int { return r.RawBytes - r.FilteredBytes }
@@ -77,6 +106,9 @@ func NewRecord(command string, raw, filtered string, durationMs int64) Record {
 		DurationMs:     durationMs,
 	}
 	addSessionEnv(&r)
+	if cwd, err := os.Getwd(); err == nil {
+		r.CWD = cwd
+	}
 	return r
 }
 
@@ -601,6 +633,58 @@ func RenderSessionGain(sessionID string, records []Record, totals *transcript.Se
 	b.WriteString(fmt.Sprintf("%-26s $%.4f at %s (cl100k)\n",
 		"Estimated cost saved:", usd, model))
 
+	return b.String()
+}
+
+// RenderByProject groups records by .git-rooted project name and ranks
+// by tokens saved. Useful for users who work across many repos and want
+// to see which project benefits most from filtering.
+func RenderByProject(records []Record) string {
+	type bucket struct {
+		project     string
+		commands    int
+		tokensSaved int
+		bytesSaved  int
+	}
+	byProj := map[string]*bucket{}
+	for _, r := range records {
+		p := r.Project()
+		b, ok := byProj[p]
+		if !ok {
+			b = &bucket{project: p}
+			byProj[p] = b
+		}
+		b.commands++
+		b.tokensSaved += r.TokensSaved()
+		b.bytesSaved += r.BytesSaved()
+	}
+	if len(byProj) == 0 {
+		return ""
+	}
+	rows := make([]*bucket, 0, len(byProj))
+	for _, b := range byProj {
+		rows = append(rows, b)
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].tokensSaved > rows[j].tokensSaved
+	})
+
+	var b strings.Builder
+	dash := strings.Repeat("─", 72)
+	b.WriteString("\nBy Project\n")
+	b.WriteString(dash + "\n")
+	b.WriteString(fmt.Sprintf("  %-32s  %-8s  %-12s  %s\n",
+		"Project", "Calls", "Tokens saved", "Bytes saved"))
+	b.WriteString(dash + "\n")
+	for _, r := range rows {
+		name := r.project
+		if len(name) > 32 {
+			name = name[:29] + "..."
+		}
+		b.WriteString(fmt.Sprintf("  %-32s  %-8d  %-12d  %s\n",
+			name, r.commands, r.tokensSaved, humanBytes(r.bytesSaved)))
+	}
+	b.WriteString(dash + "\n")
 	return b.String()
 }
 

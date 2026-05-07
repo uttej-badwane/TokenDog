@@ -28,6 +28,18 @@ import (
 //  4. Cache the filtered output so future hits return what callers expect.
 //  5. Record analytics with real token counts via the tokenizer.
 func runFiltered(binary string, args []string, recordPrefix string) error {
+	// TOKENDOG_DISABLE — global escape hatch. Documented in SECURITY.md
+	// for regulated/production environments where output filtering must
+	// not happen. Runs the wrapped binary with no cache, no filter, no
+	// analytics — TD becomes a transparent passthrough.
+	if disabledByEnv() {
+		c := exec.Command(binary, args...)
+		c.Stdout = os.Stdout
+		c.Stderr = os.Stderr
+		c.Stdin = os.Stdin
+		return c.Run()
+	}
+
 	cmdLabel := recordPrefix + strings.Join(args, " ")
 	key := cache.Key(binary, args)
 
@@ -68,6 +80,14 @@ func runFiltered(binary string, args []string, recordPrefix string) error {
 
 	_ = analytics.Save(analytics.NewRecord(cmdLabel, raw, filtered, elapsed))
 	return err
+}
+
+// disabledByEnv reports whether TOKENDOG_DISABLE is set to a truthy value.
+// Truthy = "1", "true", "yes" (case-insensitive). Empty / unset / "0" /
+// "false" / "no" all mean "filtering enabled".
+func disabledByEnv() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("TOKENDOG_DISABLE")))
+	return v == "1" || v == "true" || v == "yes"
 }
 
 func cwdSafe() string {

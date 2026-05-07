@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -14,14 +15,16 @@ import (
 )
 
 var (
-	gainHistory bool
-	gainSession string
-	gainByModel bool
-	gainDaily   bool
-	gainMonthly bool
-	gainSince   string
-	gainUntil   string
-	gainJSON    bool
+	gainHistory   bool
+	gainSession   string
+	gainByModel   bool
+	gainByProject bool
+	gainDaily     bool
+	gainMonthly   bool
+	gainSince     string
+	gainUntil     string
+	gainJSON      bool
+	gainWithSpend bool
 )
 
 var gainCmd = &cobra.Command{
@@ -41,11 +44,13 @@ func init() {
 	gainCmd.Flags().BoolVar(&gainHistory, "history", false, "Show recent command history")
 	gainCmd.Flags().StringVar(&gainSession, "session", "", "Show savings for a specific session id (or 'current' for the active session)")
 	gainCmd.Flags().BoolVar(&gainByModel, "by-model", false, "Show per-model breakdown using model-specific Anthropic rates")
+	gainCmd.Flags().BoolVar(&gainByProject, "by-project", false, "Show per-project breakdown (resolved via .git root above the cwd at exec time)")
 	gainCmd.Flags().BoolVar(&gainDaily, "daily", false, "Aggregate by calendar day")
 	gainCmd.Flags().BoolVar(&gainMonthly, "monthly", false, "Aggregate by calendar month")
 	gainCmd.Flags().StringVar(&gainSince, "since", "", "Only include records on or after this date (YYYY-MM-DD or relative like 7d/1m)")
 	gainCmd.Flags().StringVar(&gainUntil, "until", "", "Only include records on or before this date (YYYY-MM-DD or relative like 7d/1m)")
 	gainCmd.Flags().BoolVar(&gainJSON, "json", false, "Emit JSON instead of the human-readable table")
+	gainCmd.Flags().BoolVar(&gainWithSpend, "with-spend", false, "Cross-reference ccusage spend data (requires npx ccusage on PATH)")
 }
 
 func runGain(_ *cobra.Command, _ []string) error {
@@ -83,8 +88,90 @@ func runGain(_ *cobra.Command, _ []string) error {
 	if gainByModel {
 		out += analytics.RenderByModel(records)
 	}
+	if gainByProject {
+		out += analytics.RenderByProject(records)
+	}
+	if gainWithSpend {
+		out += renderWithSpend(records)
+	}
 	fmt.Print(out)
 	return nil
+}
+
+// renderWithSpend invokes ccusage daily --json (npx-style if not directly
+// on PATH) and joins its lifetime spend with td's lifetime savings.
+// Format: "you spent $X on Anthropic; td saved $Y of it (Z%)".
+//
+// Quietly degrades: if ccusage isn't installed or errors, we print a
+// one-line note and continue. td gain --with-spend should never make the
+// rest of the command fail.
+func renderWithSpend(records []analytics.Record) string {
+	out, err := callCCUsage()
+	if err != nil {
+		return fmt.Sprintf("\n[--with-spend skipped: %s — install via `npm i -g ccusage`]\n", err.Error())
+	}
+	summary, _ := analytics.Summarize(records)
+	tdUSD := summary.USDSaved()
+
+	var b strings.Builder
+	dash := strings.Repeat("─", 60)
+	b.WriteString("\nYour Anthropic spend (via ccusage)\n")
+	b.WriteString(dash + "\n")
+	b.WriteString(fmt.Sprintf("  %-22s $%.2f\n", "Total spend:", out.totalUSD))
+	b.WriteString(fmt.Sprintf("  %-22s $%.4f\n", "TD saved (lifetime):", tdUSD))
+	if out.totalUSD > 0 {
+		pct := tdUSD / out.totalUSD * 100
+		b.WriteString(fmt.Sprintf("  %-22s %.2f%%\n", "TD share of bill:", pct))
+	}
+	b.WriteString(dash + "\n")
+	return b.String()
+}
+
+type ccusageOut struct {
+	totalUSD float64
+}
+
+// callCCUsage runs `ccusage daily --json` (preferring `ccusage` directly,
+// falling back to `npx ccusage@latest`) and parses the totalCost. We
+// don't try to model the full ccusage schema; we just want the headline
+// total.
+func callCCUsage() (ccusageOut, error) {
+	commands := [][]string{
+		{"ccusage", "daily", "--json"},
+		{"npx", "-y", "ccusage@latest", "daily", "--json"},
+	}
+	var lastErr error
+	for _, cmdParts := range commands {
+		bin, args := cmdParts[0], cmdParts[1:]
+		if _, err := exec.LookPath(bin); err != nil {
+			lastErr = err
+			continue
+		}
+		c := exec.Command(bin, args...)
+		out, err := c.Output()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		var parsed struct {
+			Daily []struct {
+				TotalCost float64 `json:"totalCost"`
+			} `json:"daily"`
+		}
+		if err := json.Unmarshal(out, &parsed); err != nil {
+			lastErr = err
+			continue
+		}
+		total := 0.0
+		for _, d := range parsed.Daily {
+			total += d.TotalCost
+		}
+		return ccusageOut{totalUSD: total}, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("ccusage not found on PATH")
+	}
+	return ccusageOut{}, lastErr
 }
 
 func runGainSession(records []analytics.Record) error {

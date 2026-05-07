@@ -9,6 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"tokendog/internal/analytics"
+	"tokendog/internal/filter"
+	"tokendog/internal/replay"
 )
 
 var mcpCmd = &cobra.Command{
@@ -190,6 +192,31 @@ func mcpTools() []mcpToolDef {
 				"required": []string{"session_id"},
 			},
 		},
+		{
+			Name: "td_filter_list",
+			Description: "List every binary TokenDog has a filter for. Use to answer 'what " +
+				"tools does TokenDog support?' or to inform decisions about adding new filters.",
+			InputSchema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+			},
+		},
+		{
+			Name: "td_unhandled_top",
+			Description: "Show the top binaries from your Claude history that TokenDog has NO " +
+				"filter for yet. Use to answer 'what filter should I build next?' — the highest " +
+				"counts are the highest-leverage targets.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"limit": map[string]any{
+						"type":        "integer",
+						"description": "Max binaries to return (default: 10)",
+						"default":     10,
+					},
+				},
+			},
+		},
 	}
 }
 
@@ -250,9 +277,74 @@ func handleToolCall(req rpcRequest) rpcResponse {
 		summary, _ := analytics.Summarize(sessionRecords)
 		return mcpToolOK(req.ID, summary)
 
+	case "td_filter_list":
+		return mcpToolOK(req.ID, map[string]any{
+			"filters": filter.Registered(),
+			"count":   len(filter.Registered()),
+		})
+
+	case "td_unhandled_top":
+		limit := 10
+		if v, ok := params.Arguments["limit"].(float64); ok {
+			limit = int(v)
+			if limit < 1 {
+				limit = 1
+			} else if limit > 100 {
+				limit = 100
+			}
+		}
+		top, err := mcpUnhandledTop(limit)
+		if err != nil {
+			return mcpToolErr(req.ID, err.Error())
+		}
+		return mcpToolOK(req.ID, map[string]any{
+			"top_unhandled": top,
+			"limit":         limit,
+		})
+
 	default:
 		return mcpToolErr(req.ID, "unknown tool: "+params.Name)
 	}
+}
+
+// mcpUnhandledTop runs a quick `td replay` walk and surfaces the top
+// unhandled binaries. Same logic as the human-facing replay output but
+// returns just the binary→count map for MCP consumption.
+func mcpUnhandledTop(limit int) ([]map[string]any, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	root := home + "/.claude/projects"
+	if _, err := os.Stat(root); err != nil {
+		return nil, fmt.Errorf("no Claude transcripts at %s", root)
+	}
+	r, err := replay.Walk(root, dispatchReplay, replay.Options{})
+	if err != nil {
+		return nil, err
+	}
+	type entry struct {
+		Binary string `json:"binary"`
+		Count  int    `json:"count"`
+	}
+	var entries []entry
+	for k, v := range r.UnhandledTopN {
+		entries = append(entries, entry{Binary: k, Count: v})
+	}
+	// Sort by count desc.
+	for i := 1; i < len(entries); i++ {
+		for j := i; j > 0 && entries[j].Count > entries[j-1].Count; j-- {
+			entries[j], entries[j-1] = entries[j-1], entries[j]
+		}
+	}
+	if len(entries) > limit {
+		entries = entries[:limit]
+	}
+	out := make([]map[string]any, len(entries))
+	for i, e := range entries {
+		out[i] = map[string]any{"binary": e.Binary, "count": e.Count}
+	}
+	return out, nil
 }
 
 // mcpToolOK packages a JSON-serializable result as an MCP tool result.
