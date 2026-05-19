@@ -1,3 +1,4 @@
+<!-- TokenDog: token-optimized CLI proxy for AI coding assistants -->
 # TokenDog
 
 ```
