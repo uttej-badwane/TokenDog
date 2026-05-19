@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"tokendog/internal/analytics"
+	"tokendog/internal/compress"
 	"tokendog/internal/filter"
 	"tokendog/internal/hook"
 )
@@ -54,43 +55,55 @@ func FilterHandler(req *http.Request, body []byte) ([]byte, error) {
 		}
 	}
 
+	// Compress tool descriptions. Tool definitions can contain verbose prose
+	// (sometimes 500-2000 tokens). We strip filler/articles/pleasantries
+	// using the same compressor as `td compress`, saving input tokens on
+	// every API call.
+	//
+	// Cache safety: Claude Code occasionally marks the last tool with
+	// cache_control to cache the tools array. We skip compression when any
+	// tool carries cache_control so we never invalidate a warm cache entry.
+	toolsModified := compressToolDescriptions(&doc)
+
 	last := &doc.Messages[len(doc.Messages)-1]
-	blocks, ok := unmarshalContent(last.Content)
-	if !ok {
-		return body, nil
-	}
+	blocks, contentOK := unmarshalContent(last.Content)
 	modified := false
-	for i := range blocks {
-		b := &blocks[i]
-		if b.Type != "tool_result" || b.ToolUseID == "" {
-			continue
+	if contentOK {
+		for i := range blocks {
+			b := &blocks[i]
+			if b.Type != "tool_result" || b.ToolUseID == "" {
+				continue
+			}
+			cmd, ok := useByID[b.ToolUseID]
+			if !ok {
+				continue
+			}
+			bin, args, ok := hook.ParseBinary(cmd)
+			if !ok {
+				continue
+			}
+			raw := extractText(b.Content)
+			if raw == "" {
+				continue
+			}
+			filtered, applied := filter.Apply(bin, args, raw)
+			if !applied || filtered == raw {
+				continue
+			}
+			// Replace the content block. Use the simple string form (Anthropic
+			// accepts either string OR array of {type:text,text:...}).
+			b.Content = json.RawMessage(mustMarshalString(filtered))
+			modified = true
+			recordProxySaving(cmd, raw, filtered)
 		}
-		cmd, ok := useByID[b.ToolUseID]
-		if !ok {
-			continue
+		if modified {
+			last.Content = mustMarshalContentBlocks(blocks)
 		}
-		bin, args, ok := hook.ParseBinary(cmd)
-		if !ok {
-			continue
-		}
-		raw := extractText(b.Content)
-		if raw == "" {
-			continue
-		}
-		filtered, applied := filter.Apply(bin, args, raw)
-		if !applied || filtered == raw {
-			continue
-		}
-		// Replace the content block. Use the simple string form (Anthropic
-		// accepts either string OR array of {type:text,text:...}).
-		b.Content = json.RawMessage(mustMarshalString(filtered))
-		modified = true
-		recordProxySaving(cmd, raw, filtered)
 	}
-	if !modified {
+
+	if !modified && !toolsModified {
 		return body, nil
 	}
-	last.Content = mustMarshalContentBlocks(blocks)
 
 	out, err := json.Marshal(doc)
 	if err != nil {
@@ -99,6 +112,74 @@ func FilterHandler(req *http.Request, body []byte) ([]byte, error) {
 		return body, nil
 	}
 	return out, nil
+}
+
+// toolDef is the minimal shape of an Anthropic tool definition we need to
+// inspect and rewrite. Unknown fields (input_schema, etc.) are preserved via
+// Extra so the re-serialised payload is identical to the input modulo the
+// description field.
+type toolDef struct {
+	Name         string          `json:"name"`
+	Description  string          `json:"description,omitempty"`
+	CacheControl json.RawMessage `json:"cache_control,omitempty"`
+	// Everything else (input_schema, type, …) comes through json.RawMessage
+	// to avoid accidental drops.
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+// compressToolDescriptions compresses description fields in doc.Tools.
+// Returns true if any description was changed. Skips the entire tools array
+// if any tool carries cache_control (preserves the cached payload).
+func compressToolDescriptions(doc *messagesRequest) bool {
+	if len(doc.Tools) == 0 {
+		return false
+	}
+	// Parse tools as a generic slice so we preserve unknown fields.
+	var tools []map[string]json.RawMessage
+	if err := json.Unmarshal(doc.Tools, &tools); err != nil {
+		return false
+	}
+
+	// Cache-safety check: if any tool has cache_control, skip entirely.
+	for _, t := range tools {
+		if cc, ok := t["cache_control"]; ok && len(cc) > 0 && string(cc) != "null" {
+			return false
+		}
+	}
+
+	modified := false
+	for i, t := range tools {
+		raw, ok := t["description"]
+		if !ok || len(raw) == 0 {
+			continue
+		}
+		var desc string
+		if err := json.Unmarshal(raw, &desc); err != nil || desc == "" {
+			continue
+		}
+		compressed := compress.CompressString(desc)
+		if compressed == desc {
+			continue
+		}
+		newRaw, err := json.Marshal(compressed)
+		if err != nil {
+			continue
+		}
+		tools[i]["description"] = newRaw
+		modified = true
+	}
+
+	if !modified {
+		return false
+	}
+	newTools, err := json.Marshal(tools)
+	if err != nil {
+		return false
+	}
+	// Record tools savings in analytics.
+	recordProxySaving("tools/descriptions", string(doc.Tools), string(newTools))
+	doc.Tools = newTools
+	return true
 }
 
 // recordProxySaving writes a proxy-mode analytics record. Same Record
