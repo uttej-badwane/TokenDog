@@ -114,19 +114,6 @@ func FilterHandler(req *http.Request, body []byte) ([]byte, error) {
 	return out, nil
 }
 
-// toolDef is the minimal shape of an Anthropic tool definition we need to
-// inspect and rewrite. Unknown fields (input_schema, etc.) are preserved via
-// Extra so the re-serialised payload is identical to the input modulo the
-// description field.
-type toolDef struct {
-	Name         string          `json:"name"`
-	Description  string          `json:"description,omitempty"`
-	CacheControl json.RawMessage `json:"cache_control,omitempty"`
-	// Everything else (input_schema, type, …) comes through json.RawMessage
-	// to avoid accidental drops.
-	Extra map[string]json.RawMessage `json:"-"`
-}
-
 // compressToolDescriptions compresses description fields in doc.Tools.
 // Returns true if any description was changed. Skips the entire tools array
 // if any tool carries cache_control (preserves the cached payload).

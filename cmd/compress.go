@@ -12,9 +12,8 @@ import (
 )
 
 var (
-	compressDryRun  bool
-	compressNoBack  bool
-	compressInPlace bool
+	compressDryRun bool
+	compressNoBack bool
 )
 
 var compressCmd = &cobra.Command{
