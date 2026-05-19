@@ -87,4 +87,5 @@ func init() {
 	rootCmd.AddCommand(proxyCmd)
 	rootCmd.AddCommand(setupCmd)
 	rootCmd.AddCommand(unsetupCmd)
+	rootCmd.AddCommand(compressCmd)
 }

@@ -161,6 +161,90 @@ func TestFilterHandlerSkipsUnknownBinary(t *testing.T) {
 	}
 }
 
+// TestFilterHandlerCompressesToolDescriptions — tool descriptions without
+// cache_control should be compressed by the proxy.
+func TestFilterHandlerCompressesToolDescriptions(t *testing.T) {
+	req := mustMarshal(map[string]any{
+		"model": "claude-sonnet-4-6",
+		"tools": []any{
+			map[string]any{
+				"name":        "bash",
+				"description": "Run commands in a bash shell. Please make sure to just use this tool when you basically need to execute a command. You should always provide the full command.",
+				"input_schema": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"command": map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
+		"messages": []any{
+			map[string]any{
+				"role":    "user",
+				"content": "hello",
+			},
+		},
+	})
+
+	httpReq, _ := http.NewRequest("POST", "/v1/messages", bytes.NewReader(req))
+	out, err := FilterHandler(httpReq, req)
+	if err != nil {
+		t.Fatalf("FilterHandler: %v", err)
+	}
+
+	var doc map[string]any
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	tools := doc["tools"].([]any)
+	tool := tools[0].(map[string]any)
+	desc := tool["description"].(string)
+
+	// Fillers like "please", "basically", "just" should be gone.
+	// "always" is a semantic qualifier and is intentionally kept.
+	for _, filler := range []string{"please", "basically", "just"} {
+		if strings.Contains(strings.ToLower(desc), filler) {
+			t.Errorf("filler %q still present in tool description: %q", filler, desc)
+		}
+	}
+	if len(out) >= len(req) {
+		t.Errorf("expected payload reduction from tool compression: %d -> %d", len(req), len(out))
+	}
+}
+
+// TestFilterHandlerSkipsToolCompressionWithCacheControl — tools bearing
+// cache_control must not be touched (would invalidate the warm cache entry).
+func TestFilterHandlerSkipsToolCompressionWithCacheControl(t *testing.T) {
+	req := mustMarshal(map[string]any{
+		"model": "claude-sonnet-4-6",
+		"tools": []any{
+			map[string]any{
+				"name":          "bash",
+				"description":   "Run commands in a bash shell. Please just use this when you basically need a command.",
+				"cache_control": map[string]any{"type": "ephemeral"},
+				"input_schema":  map[string]any{"type": "object"},
+			},
+		},
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hi"},
+		},
+	})
+
+	httpReq, _ := http.NewRequest("POST", "/v1/messages", bytes.NewReader(req))
+	out, _ := FilterHandler(httpReq, req)
+
+	// Tools should be untouched when cache_control is present.
+	var orig, got map[string]any
+	json.Unmarshal(req, &orig)
+	json.Unmarshal(out, &got)
+
+	origDesc := orig["tools"].([]any)[0].(map[string]any)["description"].(string)
+	gotDesc := got["tools"].([]any)[0].(map[string]any)["description"].(string)
+	if origDesc != gotDesc {
+		t.Errorf("tool description was modified despite cache_control:\n  orig: %q\n  got:  %q", origDesc, gotDesc)
+	}
+}
+
 func mustMarshal(v any) []byte {
 	out, err := json.Marshal(v)
 	if err != nil {
