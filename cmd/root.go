@@ -88,4 +88,11 @@ func init() {
 	rootCmd.AddCommand(setupCmd)
 	rootCmd.AddCommand(unsetupCmd)
 	rootCmd.AddCommand(compressCmd)
+	rootCmd.AddCommand(rgCmd)
+	rootCmd.AddCommand(catCmd)
+	rootCmd.AddCommand(headCmd)
+	rootCmd.AddCommand(tailCmd)
+	rootCmd.AddCommand(psqlCmd)
+	rootCmd.AddCommand(pgcliCmd)
+	rootCmd.AddCommand(helmCmd)
 }

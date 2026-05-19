@@ -78,8 +78,16 @@ func runSetup(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Step 2: launchd daemon
-	if err := setupStep(2, "Install launchd auto-start daemon", func() (string, error) {
+	// Step 2: auto-start daemon (launchd on macOS, systemd --user on Linux,
+	// schtasks on Windows)
+	daemonLabel := "Install auto-start daemon"
+	switch runtimeGOOS() {
+	case "linux":
+		daemonLabel = "Install systemd user service (tokendog-proxy)"
+	case "windows":
+		daemonLabel = "Register scheduled task (TokenDogProxy)"
+	}
+	if err := setupStep(2, daemonLabel, func() (string, error) {
 		path, err := proxy.DaemonInstall()
 		if err != nil {
 			if path != "" {
@@ -138,14 +146,31 @@ func printPostSetupInstructions() {
 	fmt.Println("    Option B: in your current shell, prefix the env on launch:")
 	fmt.Println("              HTTPS_PROXY=http://127.0.0.1:8888 claude")
 	fmt.Println()
-	fmt.Println("  Claude.app (Mac desktop)")
-	fmt.Println("    Quit fully (cmd-Q from menu, not just close window). Relaunch")
-	fmt.Println("    via the dock or via:")
-	fmt.Println("              open -a Claude --args \\")
-	fmt.Println("                --proxy-server=http://127.0.0.1:8888 \\")
-	fmt.Println("                --proxy-bypass-list='<-loopback>'")
-	fmt.Println("    (Claude.app is Electron-based; HTTPS_PROXY env is ignored,")
-	fmt.Println("     so the --proxy-server flag is the canonical way.)")
+	switch runtimeGOOS() {
+	case "darwin":
+		fmt.Println("  Claude.app (Mac desktop)")
+		fmt.Println("    Quit fully (cmd-Q from menu, not just close window). Relaunch")
+		fmt.Println("    via the dock or via:")
+		fmt.Println("              open -a Claude --args \\")
+		fmt.Println("                --proxy-server=http://127.0.0.1:8888 \\")
+		fmt.Println("                --proxy-bypass-list='<-loopback>'")
+		fmt.Println("    (Claude.app is Electron-based; HTTPS_PROXY env is ignored,")
+		fmt.Println("     so the --proxy-server flag is the canonical way.)")
+	case "linux":
+		fmt.Println("  Linux desktop (VS Code, etc.)")
+		fmt.Println("    Close and reopen your editor so it inherits the updated env from")
+		fmt.Println("    the new shell. Or launch it explicitly with the proxy set:")
+		fmt.Println("              HTTPS_PROXY=http://127.0.0.1:8888 code .")
+		fmt.Println()
+		fmt.Println("  Headless server (no login session)?")
+		fmt.Println("    Run: loginctl enable-linger $USER")
+		fmt.Println("    This lets systemd --user services persist without an active login.")
+	case "windows":
+		fmt.Println("  Windows (Claude.exe / VS Code)")
+		fmt.Println("    Close and reopen the application. The scheduled task starts the")
+		fmt.Println("    proxy at logon — if you haven't logged out and back in, start it")
+		fmt.Println("    manually once: td proxy start (in a new terminal).")
+	}
 	fmt.Println()
 	fmt.Println("After your client is restarted, run:")
 	fmt.Println("    tail -f ~/.config/tokendog/proxy.log    # watch live activity")

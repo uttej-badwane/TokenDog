@@ -45,8 +45,15 @@ var Supported = map[string]string{
 	"az":        "az",
 	"make":      "make",
 	"grep":      "grep",
+	"rg":        "rg",
 	"terraform": "terraform",
 	"tofu":      "tofu",
+	"cat":       "cat",
+	"head":      "head",
+	"tail":      "tail",
+	"psql":      "psql",
+	"pgcli":     "pgcli",
+	"helm":      "helm",
 }
 
 func ProcessClaude(input ClaudeHookInput) *ClaudeHookOutput {
@@ -190,6 +197,15 @@ func rewriteCommand(cmd string, depth int) string {
 			return cmd
 		}
 		return reassembleChain(rewritten, seps)
+	}
+
+	// If splitChain bailed due to heredocs, command substitution, or other
+	// unsafe constructs, don't try to rewrite the single segment — the
+	// field-split below would mangle the structure (e.g. `cat <<EOF\n&&\nEOF`
+	// becomes `["cat","<<EOF","&&","EOF"]`, losing the newlines that delimit
+	// the heredoc body). Bail out unchanged.
+	if !safeToSplit(cmd) {
+		return cmd
 	}
 
 	parts := strings.Fields(cmd)
