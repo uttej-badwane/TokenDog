@@ -33,8 +33,15 @@ func init() {
 	Register("az", cloudAdapter)
 	Register("make", makeAdapter)
 	Register("grep", grepAdapter)
+	Register("rg", grepAdapter)    // ripgrep: same path:lineno:content output shape as grep
 	Register("terraform", terraformAdapter)
 	Register("tofu", terraformAdapter) // OpenTofu is a terraform fork; same output shape
+	Register("cat", catAdapter)
+	Register("head", catAdapter)
+	Register("tail", catAdapter)
+	Register("psql", psqlAdapter)
+	Register("pgcli", psqlAdapter) // pgcli emits psql-compatible output
+	Register("helm", helmAdapter)
 }
 
 // Per-tool value-flag sets. We list only the flags that change which
