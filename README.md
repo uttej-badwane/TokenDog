@@ -136,6 +136,22 @@ td stash purge             # delete every stashed original
 
 Tunables: `TD_STASH_MIN` (min bytes before stashing, default 2048), `TD_STASH_TTL` (retention seconds, default 86400).
 
+## Cross-message dedup
+
+The per-tool filters above shrink each output in isolation. Dedup attacks a different axis: **redundancy across the conversation**. Agents routinely re-emit identical output — re-reading the same file to re-check it, re-running a verbose status command, pasting the same config twice — and each repeat re-bills the full text even though a byte-identical copy already sits earlier in the prompt.
+
+When the **last** message's `tool_result` is byte-for-byte identical to a `tool_result` from an earlier message in the same request, the proxy replaces it with a one-line back-reference:
+
+```
+[td: identical to the output of `cat config.yaml` — 4 tool outputs earlier in
+ this conversation. Elided to save tokens; the full 3.2KB text appears
+ verbatim above.]
+```
+
+This is **lossless** (the full copy is verbatim above, in the model's own context — nothing is removed from the conversation) and **cache-safe** (like every proxy transform, it touches only the last message, which the prompt cache hasn't hashed yet). It deliberately covers *any* tool output, not just commands with a filter — re-reading a large file via the Read tool is one of the most common redundancies and has no per-tool filter at all.
+
+On by default; set `TD_NO_DEDUP=1` to disable. Tiny duplicates where the marker would cost more than the content are left untouched by the `Guard` invariant.
+
 ## Honest savings expectations
 
 - Tool output (the part TD touches) is typically **30-50% of your Anthropic bill**.
