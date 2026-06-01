@@ -6,6 +6,7 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Reversible compression** (opt-in via `TD_REVERSIBLE=1`): the proxy stashes the full original of any large tool output under `~/.config/tokendog/originals/` and injects a compact head/tail preview carrying a `[td:STASHED id=…]` marker. The model recovers the original on demand through the new `td_retrieve` MCP tool. This is the first path that goes beyond the lossless ceiling — nothing is lost, only deferred to an on-demand round-trip — and it covers the long tail of commands that have no per-tool filter. New `td stash list/get/purge` subcommands inspect the store. Tunable with `TD_STASH_MIN` (min bytes, default 2048) and `TD_STASH_TTL` (retention seconds, default 24h).
 - **Filter registry**: every binary→filter mapping now lives in `internal/filter/registrations.go`. Adding a new filter touches one file instead of five (filter source, cmd wrapper, root registration, replay dispatch, hook Supported map).
 - **history.jsonl rotation**: archive at 100k records or 90 days to `history-YYYY-MM.jsonl.gz`. Prevents `td gain` from getting slower over time.
 - **Hot-path benchmarks** (`internal/hook/hook_bench_test.go`): `BenchmarkProcessClaudeSimple`, `Chain`, `BashC`, `Unsupported`, `SplitChain`, `ParseBinary`. Sub-microsecond budget for the per-Bash-call hot path.

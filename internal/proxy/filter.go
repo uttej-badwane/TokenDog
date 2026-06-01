@@ -11,7 +11,37 @@ import (
 	"tokendog/internal/compress"
 	"tokendog/internal/filter"
 	"tokendog/internal/hook"
+	"tokendog/internal/stash"
 )
+
+// previewHeadLines / previewTailLines bound the head/tail kept when a large
+// output is stashed. Tuned so the model keeps the orienting top of a log or
+// file plus the trailing summary/errors most outputs end with.
+const (
+	previewHeadLines = 20
+	previewTailLines = 5
+)
+
+// applyReversible stashes content and returns a compact preview when
+// reversible mode is on and the content is large enough to be worth it.
+// Returns (preview, true) on success, or ("", false) when the feature is
+// off, the content is too small, eliding wouldn't shrink it, or the stash
+// write fails — in every false case the caller keeps the lossless path.
+func applyReversible(command, content string) (string, bool) {
+	if !stash.Enabled() || len(content) < stash.MinSize() {
+		return "", false
+	}
+	id, err := stash.Put(command, content)
+	if err != nil {
+		// Couldn't persist the original — never elide what we can't recover.
+		return "", false
+	}
+	preview := stash.Preview(id, content, previewHeadLines, previewTailLines)
+	if len(preview) >= len(content) {
+		return "", false
+	}
+	return preview, true
+}
 
 // FilterHandler is the production RequestHandler. It parses an Anthropic
 // Messages API request, finds tool_result content blocks in the LAST
@@ -78,15 +108,36 @@ func FilterHandler(req *http.Request, body []byte) ([]byte, error) {
 			if !ok {
 				continue
 			}
-			bin, args, ok := hook.ParseBinary(cmd)
-			if !ok {
-				continue
-			}
 			raw := extractText(b.Content)
 			if raw == "" {
 				continue
 			}
-			filtered, applied := filter.Apply(bin, args, raw)
+
+			// Lossless pass — only for binaries we have a filter for.
+			// ParseBinary returns ok=false for unsupported binaries; those
+			// still flow to the reversible pass below, which is where the
+			// long-tail of unhandled commands gets its only compression.
+			filtered := raw
+			applied := false
+			if bin, args, pok := hook.ParseBinary(cmd); pok {
+				if f, a := filter.Apply(bin, args, raw); a {
+					filtered, applied = f, a
+				}
+			}
+
+			// Reversible pass (opt-in via TD_REVERSIBLE=1): if the result is
+			// still large after the lossless pass (or had no lossless filter
+			// at all), stash the full original and replace it with a compact
+			// head/tail preview that points at the td_retrieve MCP tool. This
+			// breaks the lossless ceiling — nothing is lost, only deferred to
+			// an on-demand round-trip.
+			if reversed, rok := applyReversible(cmd, filtered); rok {
+				b.Content = json.RawMessage(mustMarshalString(reversed))
+				modified = true
+				recordProxySaving(cmd+" (reversible)", raw, reversed)
+				continue
+			}
+
 			if !applied || filtered == raw {
 				continue
 			}
