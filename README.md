@@ -137,6 +137,24 @@ td stash purge             # delete every stashed original
 
 Tunables: `TD_STASH_MIN` (min bytes before stashing, default 2048), `TD_STASH_TTL` (retention seconds, default 86400).
 
+### `td learn` — is reversible compression too aggressive?
+
+Every `td_retrieve` call is logged. `td learn` joins those retrievals against the stash events and shows a per-command retrieve rate — how often the model had to pull the full original back because the preview dropped something it needed:
+
+```bash
+$ td learn
+Stashed (reversible) events:  142
+Retrievals logged:            21
+
+Per-command retrieve rate (higher = previews too aggressive):
+COMMAND           STASHED  RETRIEVED    RATE
+kubectl                40         28     70%  ← previews likely too aggressive
+journalctl             55          6     11%
+cat                    30          2      7%
+```
+
+A high rate is a signal to raise `TD_STASH_MIN` (so that command's output isn't stashed) or treat it as a poor stash candidate. A zero rate means previews are serving cleanly — reversible compression is a pure win for that command. `--json` and `--top N` supported.
+
 ## Cross-message dedup
 
 The per-tool filters above shrink each output in isolation. Dedup attacks a different axis: **redundancy across the conversation**. Agents routinely re-emit identical output — re-reading the same file to re-check it, re-running a verbose status command, pasting the same config twice — and each repeat re-bills the full text even though a byte-identical copy already sits earlier in the prompt.

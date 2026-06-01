@@ -263,6 +263,9 @@ func handleToolCall(req rpcRequest) rpcResponse {
 			return mcpToolErr(req.ID, "no stashed output for id "+id+
 				" (it may have expired or never existed)")
 		}
+		// Record the retrieval so `td learn` can see which commands' previews
+		// the model keeps needing the full text for. Best-effort.
+		stash.LogRetrieval(id, rec.Command)
 		// Return the raw original directly — the model wants the bytes, not a
 		// JSON wrapper it has to unpack.
 		return rpcResponse{
