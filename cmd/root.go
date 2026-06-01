@@ -96,4 +96,5 @@ func init() {
 	rootCmd.AddCommand(pgcliCmd)
 	rootCmd.AddCommand(helmCmd)
 	rootCmd.AddCommand(stashCmd)
+	rootCmd.AddCommand(learnCmd)
 }
