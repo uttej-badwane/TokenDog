@@ -33,7 +33,7 @@ func init() {
 	Register("az", cloudAdapter)
 	Register("make", makeAdapter)
 	Register("grep", grepAdapter)
-	Register("rg", grepAdapter)    // ripgrep: same path:lineno:content output shape as grep
+	Register("rg", grepAdapter) // ripgrep: same path:lineno:content output shape as grep
 	Register("terraform", terraformAdapter)
 	Register("tofu", terraformAdapter) // OpenTofu is a terraform fork; same output shape
 	Register("cat", catAdapter)
