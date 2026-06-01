@@ -95,21 +95,44 @@ func FilterHandler(req *http.Request, body []byte) ([]byte, error) {
 	// tool carries cache_control so we never invalidate a warm cache entry.
 	toolsModified := compressToolDescriptions(&doc)
 
+	// Index every tool_result from earlier messages so we can replace a
+	// duplicate in the last message with a back-reference. priorOrdinal is
+	// the running tool-result count we continue from when numbering the last
+	// message's own blocks.
+	priorByHash, priorOrdinal := buildPriorResults(doc.Messages[:len(doc.Messages)-1], useByID)
+
 	last := &doc.Messages[len(doc.Messages)-1]
 	blocks, contentOK := unmarshalContent(last.Content)
 	modified := false
 	if contentOK {
+		ordinal := priorOrdinal
 		for i := range blocks {
 			b := &blocks[i]
 			if b.Type != "tool_result" || b.ToolUseID == "" {
 				continue
 			}
-			cmd, ok := useByID[b.ToolUseID]
-			if !ok {
-				continue
-			}
 			raw := extractText(b.Content)
 			if raw == "" {
+				continue
+			}
+			ordinal++
+			cmd := useByID[b.ToolUseID] // "" for non-Bash tools
+
+			// Dedup pass: if this exact output already appears earlier in the
+			// conversation, replace it with a back-reference. Lossless (the
+			// full copy is verbatim above) and works for any tool_result,
+			// including ones with no per-tool filter. Highest-value single
+			// substitution, so it runs first.
+			if deduped, ok := applyDedup(raw, priorByHash, ordinal); ok {
+				b.Content = json.RawMessage(mustMarshalString(deduped))
+				modified = true
+				recordProxySaving(dedupLabel(cmd), raw, deduped)
+				continue
+			}
+
+			// Lossless + reversible passes need a recognized Bash command;
+			// dedup above already handled the command-agnostic case.
+			if cmd == "" {
 				continue
 			}
 
