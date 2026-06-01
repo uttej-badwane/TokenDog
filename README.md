@@ -86,7 +86,51 @@ Claude Code (or any AI client respecting HTTPS_PROXY)
 
 The proxy MITMs **only** `api.anthropic.com:443` — every other host's CONNECT is tunneled through unchanged. Trust footprint stays small.
 
-Cache safety: only the **last** `tool_result` in the request is filtered. Anthropic's prompt cache hashes content; modifying historical content would invalidate the cache and net cost would go *up*. The last message contains content not yet seen by the API, so filtering it is a pure win.
+Cache safety: only the **last** `tool_result` in the request is filtered. Anthropic's prompt cache hashes content; modifying historical content would invalidate the cache and net cost would go *up*. The last message contains content not yet seen by the API, so filtering it is a pure win. **Cache-safe by construction** — TokenDog is complementary to prompt caching and batch, not a competitor to them.
+
+## Why compress at all (it's not just the bill)
+
+The headline isn't "save 10% on tokens" — token prices keep falling. The durable wins are about **how much of the context window you spend on signal vs noise**:
+
+- **Quality**: less low-signal tool noise in the window means the model spends attention on what matters. Verbose `git status`, refresh spam, duplicated file reads — that's distraction the model pays for twice (in cost *and* in focus).
+- **Latency**: fewer input tokens is less to transmit and prefill.
+- **Window pressure**: long agentic sessions hit context limits; compaction buys you more turns before truncation kicks in.
+- **Cost**: still real, especially at org scale — but the *last* reason now, not the first.
+
+Dedup and reversible compression exist to serve the first three. The byte savings are the easy thing to measure; the freed context budget is the thing that matters.
+
+## Architecture: engine + adapters + frontends
+
+TokenDog is a **provider-neutral compression engine** with swappable frontends — not a single MITM utility.
+
+```
+        frontends                    engine                providers
+┌────────────────────────┐   ┌───────────────────┐   ┌──────────────────┐
+│ td proxy   (MITM)      │   │                   │   │ anthropic        │
+│ td gateway (base_url)  │──▶│  core.Dispatch    │──▶│  /v1/messages    │
+│ (future: SDK / LiteLLM │   │  core.Compress    │   │ openai           │
+│  / Bedrock middleware) │   │                   │   │  /v1/chat/compl. │
+└────────────────────────┘   └───────────────────┘   └──────────────────┘
+```
+
+- **`internal/core`** — the engine. `Compress(conversation) → savings` over a provider-neutral `Conversation`. Knows nothing about HTTP, analytics, or any vendor. This is the reusable, testable heart.
+- **`internal/adapter/*`** — translate one wire format (Anthropic Messages, OpenAI Chat Completions) into a `Conversation` and write replacements back. Adding a provider is one adapter; the engine is untouched.
+- **frontends** — supply transport + the analytics sink. The MITM proxy and the explicit-base_url `td gateway` are two; an SDK middleware or LiteLLM callback is the same engine wired differently.
+
+## Deployment modes
+
+| Mode | How traffic reaches TD | CA cert? | Best for |
+|---|---|---|---|
+| **`td proxy`** | `HTTPS_PROXY` + MITM of `api.anthropic.com` | yes (local CA) | individual devs who want zero client config |
+| **`td gateway`** | SDK `base_url` → `http://127.0.0.1:8099` | **no** | teams / security-conscious setups — explicit, auditable opt-in |
+| SDK / gateway plugin *(roadmap)* | library call inside your own AI gateway | no | platform teams running a central LLM gateway |
+
+```bash
+# Gateway mode — no trust-store changes, no interception of anything you didn't redirect:
+td gateway --port 8099 --upstream https://api.anthropic.com
+ANTHROPIC_BASE_URL=http://127.0.0.1:8099 claude
+# or OpenAI: client = OpenAI(base_url="http://127.0.0.1:8099/v1")
+```
 
 ## What gets filtered
 
@@ -232,15 +276,19 @@ Exposes 6 tools to Claude Desktop: five read-only analytics queries (so you can 
 
 ```
 .
-├── cmd/                       cobra subcommands
+├── cmd/                       cobra subcommands (incl. `td gateway`)
 ├── internal/
+│   ├── core/                  provider-neutral engine: Compress + Dispatch
+│   ├── adapter/
+│   │   ├── anthropic/         Messages API wire ↔ Conversation
+│   │   └── openai/            Chat Completions wire ↔ Conversation
 │   ├── analytics/             history.jsonl + per-model aggregation
 │   ├── cache/                 30s output cache for repeated commands (hook mode)
 │   ├── filter/                ~25 per-tool compactors + universal Guard
 │   ├── hook/                  PreToolUse rewrite logic + bash chain parsing
 │   ├── mcpconfig/             Claude Desktop config management
 │   ├── pricing/               embedded Anthropic model pricing
-│   ├── proxy/                 HTTPS proxy + cert + launchd
+│   ├── proxy/                 thin MITM frontend over core (cert + launchd)
 │   ├── redact/                secret-scrubbing regex pack
 │   ├── replay/                transcript walker + counterfactual savings
 │   ├── stash/                 reversible-compression store (originals + preview)
@@ -249,7 +297,7 @@ Exposes 6 tools to Claude Desktop: five read-only analytics queries (so you can 
 └── scripts/install.sh         brew-less installer
 ```
 
-Filter dispatch is a single registry (`internal/filter/registrations.go`). Adding a filter is one file + one line in registrations + one entry in `hook.Supported`. See [CONTRIBUTING.md](CONTRIBUTING.md).
+The engine (`internal/core`) is provider- and transport-agnostic. Adding a **provider** is one adapter implementing `core.Provider`; adding a **filter** is one file + one line in `internal/filter/registrations.go`; adding a **frontend** (gateway, SDK middleware) is wiring a transport to `core.Dispatch`. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Status
 

@@ -97,4 +97,5 @@ func init() {
 	rootCmd.AddCommand(helmCmd)
 	rootCmd.AddCommand(stashCmd)
 	rootCmd.AddCommand(learnCmd)
+	rootCmd.AddCommand(gatewayCmd)
 }
