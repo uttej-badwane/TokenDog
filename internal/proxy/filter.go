@@ -138,13 +138,24 @@ func FilterHandler(req *http.Request, body []byte) ([]byte, error) {
 
 			// Lossless pass — only for binaries we have a filter for.
 			// ParseBinary returns ok=false for unsupported binaries; those
-			// still flow to the reversible pass below, which is where the
-			// long-tail of unhandled commands gets its only compression.
+			// still flow to the generic + reversible passes below, which is
+			// where the long-tail of unhandled commands gets compressed.
 			filtered := raw
 			applied := false
 			if bin, args, pok := hook.ParseBinary(cmd); pok {
 				if f, a := filter.Apply(bin, args, raw); a {
 					filtered, applied = f, a
+				}
+			}
+
+			// Generic content fallback: no per-tool filter claimed this output
+			// (unknown binary, or the filter no-opped). Sniff the shape and
+			// compact losslessly — currently a single JSON value re-marshalled
+			// without indentation. Lets the long tail of unhandled commands
+			// (curl/httpie, custom `--output json` CLIs) still shrink.
+			if !applied {
+				if g, gok := filter.Generic(raw); gok {
+					filtered, applied = g, true
 				}
 			}
 
