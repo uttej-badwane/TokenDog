@@ -106,6 +106,7 @@ Cache safety: only the **last** `tool_result` in the request is filtered. Anthro
 | `jq, curl` (JSON) | Lossless compaction, no indentation | 40-70% |
 | `docker ps/images` | Compact tables | 20-40% |
 | `make` | Drop successful-compile lines, keep warnings/errors verbatim | 30-70% |
+| *(any unhandled command)* | Generic fallback: re-marshal a single JSON value without indentation | 20-60% |
 
 **Lossless principle**: TokenDog never silently drops content. It restructures and removes structural noise. If filtering would lose data, the original passes through unchanged. Every filter has the universal `Guard` invariant: output bytes ≤ input bytes.
 

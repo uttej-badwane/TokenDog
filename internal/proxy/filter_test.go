@@ -164,6 +164,48 @@ func TestFilterHandlerSkipsUnknownBinary(t *testing.T) {
 	}
 }
 
+// TestFilterHandlerGenericJSONFallback — an unhandled binary (no per-tool
+// filter) that emits a single indented JSON value should be compacted by the
+// generic content fallback.
+func TestFilterHandlerGenericJSONFallback(t *testing.T) {
+	pretty := "{\n  \"status\": \"ok\",\n  \"items\": [\n    {\n      \"id\": 1,\n      \"name\": \"alpha\"\n    },\n    {\n      \"id\": 2,\n      \"name\": \"beta\"\n    }\n  ]\n}"
+	req := mustMarshal(map[string]any{
+		"messages": []any{
+			map[string]any{"role": "assistant", "content": []any{map[string]any{
+				"type": "tool_use", "id": "toolu_http", "name": "Bash",
+				"input": map[string]any{"command": "http GET https://api.example.com/v1/things"},
+			}}},
+			map[string]any{"role": "user", "content": []any{map[string]any{
+				"type": "tool_result", "tool_use_id": "toolu_http", "content": pretty,
+			}}},
+		},
+	})
+	httpReq, _ := http.NewRequest("POST", "/v1/messages", bytes.NewReader(req))
+	out, err := FilterHandler(httpReq, req)
+	if err != nil {
+		t.Fatalf("FilterHandler: %v", err)
+	}
+	if len(out) >= len(req) {
+		t.Errorf("generic JSON fallback should shrink payload, got %d -> %d", len(req), len(out))
+	}
+
+	var doc map[string]any
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	msgs := doc["messages"].([]any)
+	last := msgs[len(msgs)-1].(map[string]any)
+	content := last["content"].([]any)[0].(map[string]any)["content"].(string)
+	if strings.Contains(content, "\n  ") {
+		t.Errorf("expected compacted JSON without indentation, got: %q", content)
+	}
+	// Still semantically the same document.
+	var got any
+	if err := json.Unmarshal([]byte(content), &got); err != nil {
+		t.Fatalf("compacted content is not valid JSON: %v", err)
+	}
+}
+
 // TestFilterHandlerCompressesToolDescriptions — tool descriptions without
 // cache_control should be compressed by the proxy.
 func TestFilterHandlerCompressesToolDescriptions(t *testing.T) {
