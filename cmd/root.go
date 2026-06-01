@@ -95,4 +95,5 @@ func init() {
 	rootCmd.AddCommand(psqlCmd)
 	rootCmd.AddCommand(pgcliCmd)
 	rootCmd.AddCommand(helmCmd)
+	rootCmd.AddCommand(stashCmd)
 }

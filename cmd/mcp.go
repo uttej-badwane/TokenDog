@@ -11,6 +11,7 @@ import (
 	"tokendog/internal/analytics"
 	"tokendog/internal/filter"
 	"tokendog/internal/replay"
+	"tokendog/internal/stash"
 )
 
 var mcpCmd = &cobra.Command{
@@ -202,6 +203,24 @@ func mcpTools() []mcpToolDef {
 			},
 		},
 		{
+			Name: "td_retrieve",
+			Description: "Retrieve the full, original output of a tool call that TokenDog " +
+				"compacted with reversible compression. When a tool result shows a " +
+				"'[td:STASHED id=… ]' marker, the middle was elided to save tokens — call " +
+				"this with that id to get the complete original text back. Only needed when " +
+				"the elided portion actually matters for the task.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id": map[string]any{
+						"type":        "string",
+						"description": "The stash id from a [td:STASHED id=…] marker.",
+					},
+				},
+				"required": []string{"id"},
+			},
+		},
+		{
 			Name: "td_unhandled_top",
 			Description: "Show the top binaries from your Claude history that TokenDog has NO " +
 				"filter for yet. Use to answer 'what filter should I build next?' — the highest " +
@@ -229,6 +248,30 @@ func handleToolCall(req rpcRequest) rpcResponse {
 	var params toolCallParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return rpcErr(req.ID, -32602, "invalid params: "+err.Error())
+	}
+
+	// td_retrieve reads the reversible-compression stash, not analytics —
+	// handle it before the analytics load so a missing history file can't
+	// block recovering an original.
+	if params.Name == "td_retrieve" {
+		id, _ := params.Arguments["id"].(string)
+		if id == "" {
+			return mcpToolErr(req.ID, "id is required")
+		}
+		rec, ok := stash.Get(id)
+		if !ok {
+			return mcpToolErr(req.ID, "no stashed output for id "+id+
+				" (it may have expired or never existed)")
+		}
+		// Return the raw original directly — the model wants the bytes, not a
+		// JSON wrapper it has to unpack.
+		return rpcResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result: mcpToolResult{
+				Content: []mcpContent{{Type: "text", Text: rec.Content}},
+			},
+		}
 	}
 
 	records, err := analytics.LoadAll()

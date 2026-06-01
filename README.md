@@ -109,6 +109,33 @@ Cache safety: only the **last** `tool_result` in the request is filtered. Anthro
 
 **Lossless principle**: TokenDog never silently drops content. It restructures and removes structural noise. If filtering would lose data, the original passes through unchanged. Every filter has the universal `Guard` invariant: output bytes ≤ input bytes.
 
+## Reversible compression (opt-in)
+
+The lossless filters above are capped at structural cleanup — they can only remove noise, never elide signal, because the model can't get elided bytes back. Reversible compression lifts that ceiling for the long tail of large outputs (especially commands with no per-tool filter, like big log dumps).
+
+Turn it on with `TD_REVERSIBLE=1`. Then, for any tool output still large after the lossless pass, the proxy:
+
+1. Stashes the **full original** locally under `~/.config/tokendog/originals/` (content-addressed, 24h TTL).
+2. Replaces it on the wire with a compact preview — the first 20 and last 5 lines — plus a marker:
+   ```
+   [td:STASHED id=2044d4c9819c — 375 lines / 12.0KB elided. Call the
+    td_retrieve tool (tokendog MCP server) with id="2044d4c9819c" to get
+    the full original output.]
+   ```
+3. If the elided middle actually matters, the model calls the `td_retrieve` MCP tool with that id and gets the complete original back.
+
+Nothing is lost — only **deferred** to an on-demand round-trip. The trade is: aggressive savings now (60-90% on large outputs) for one extra tool call in the rare case the middle was needed. It's opt-in because it changes the default lossless behavior. Requires the `tokendog` MCP server registered in your client (`td mcp install`) so `td_retrieve` is callable.
+
+Inspect or clear the store:
+
+```bash
+td stash list              # one row per stashed original, newest first
+td stash get <id>          # print a stashed original in full
+td stash purge             # delete every stashed original
+```
+
+Tunables: `TD_STASH_MIN` (min bytes before stashing, default 2048), `TD_STASH_TTL` (retention seconds, default 86400).
+
 ## Honest savings expectations
 
 - Tool output (the part TD touches) is typically **30-50% of your Anthropic bill**.
@@ -164,7 +191,7 @@ td mcp install     # adds tokendog to claude_desktop_config.json
 td mcp doctor      # diagnoses Claude Desktop wiring
 ```
 
-Exposes 5 tools to Claude Desktop so you can ask "how much has TokenDog saved me this week?" in chat. See [td mcp](#mcp-integration-claude-desktop) for the per-tool list.
+Exposes 6 tools to Claude Desktop: five read-only analytics queries (so you can ask "how much has TokenDog saved me this week?" in chat) plus `td_retrieve`, which serves originals stashed by [reversible compression](#reversible-compression-opt-in).
 
 ## Architecture
 
@@ -181,6 +208,7 @@ Exposes 5 tools to Claude Desktop so you can ask "how much has TokenDog saved me
 │   ├── proxy/                 HTTPS proxy + cert + launchd
 │   ├── redact/                secret-scrubbing regex pack
 │   ├── replay/                transcript walker + counterfactual savings
+│   ├── stash/                 reversible-compression store (originals + preview)
 │   ├── tokenizer/             cl100k via tiktoken-go (Anthropic proxy ~10%)
 │   └── transcript/            Claude session JSONL parser
 └── scripts/install.sh         brew-less installer
