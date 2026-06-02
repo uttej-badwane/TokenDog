@@ -78,7 +78,7 @@ func Compress(conv *Conversation, opts Options) []Saving {
 
 		// Reversible stash of whatever's left (opt-in).
 		if opts.Reversible {
-			if reversed, ok := applyReversible(r.Command, filtered); ok {
+			if reversed, ok := applyReversible(r.Command, filtered, opts.StashMinBytes); ok {
 				r.Replacement, r.Replaced = reversed, true
 				savings = append(savings, Saving{r.Command + " (reversible)", raw, reversed})
 				continue
@@ -146,8 +146,11 @@ func dedupLabel(cmd string) string {
 // when the content is large enough to be worth it. Returns ("", false) when
 // it's too small, eliding wouldn't shrink it, or the stash write fails — in
 // every false case the caller keeps the lossless path.
-func applyReversible(command, content string) (string, bool) {
-	if len(content) < stash.MinSize() {
+func applyReversible(command, content string, minBytes int) (string, bool) {
+	if minBytes <= 0 {
+		minBytes = stash.MinSize()
+	}
+	if len(content) < minBytes {
 		return "", false
 	}
 	id, err := stash.Put(command, content)
