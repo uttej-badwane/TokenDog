@@ -66,14 +66,14 @@ jobs:
           cache: true
       - run: go build ./...
 
-  # Known-vulnerability scan of stdlib + reachable dependencies. Report-only
-  # for now (continue-on-error) so it surfaces advisories without surprise-
-  # blocking PRs on a transitive CVE; flip to blocking once the team has
-  # triaged the findings (most clear by keeping the Go toolchain current).
+  # Known-vulnerability scan of stdlib + reachable dependencies. Report-only:
+  # the job stays green and emits a warning annotation when advisories are
+  # found, so it surfaces issues in the PR without blocking on a transitive
+  # CVE. Read the job log for the details; flip to blocking (drop the `|| …`)
+  # once the team has triaged the findings.
   vulncheck:
     name: govulncheck (report-only)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -83,4 +83,4 @@ jobs:
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+          govulncheck ./... || echo "::warning title=govulncheck::known advisories found (report-only, non-blocking) — see job log"
