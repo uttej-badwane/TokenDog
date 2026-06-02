@@ -39,7 +39,6 @@ func (c *colors) wrap(code, s string) string {
 
 func (c *colors) bold(s string) string   { return c.wrap("1", s) }
 func (c *colors) dim(s string) string    { return c.wrap("2", s) }
-func (c *colors) red(s string) string    { return c.wrap("31", s) }
 func (c *colors) green(s string) string  { return c.wrap("32", s) }
 func (c *colors) yellow(s string) string { return c.wrap("33", s) }
 func (c *colors) cyan(s string) string   { return c.wrap("36", s) }

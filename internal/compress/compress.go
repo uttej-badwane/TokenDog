@@ -24,7 +24,7 @@ var protectedPatterns = []*regexp.Regexp{
 	// Fenced code blocks — match ``` or ~~~ style (Go regexp has no backrefs,
 	// so we match the two fence styles separately with non-greedy dotall).
 	regexp.MustCompile("(?s)```[^\\n]*\\n.*?```"),
-	regexp.MustCompile("(?s)~~~[^\\n]*\\n.*?~~~"),
+	regexp.MustCompile(`(?s)~~~[^\n]*\n.*?~~~`),
 	// Inline code
 	regexp.MustCompile("`[^`\\n]+`"),
 	// URLs

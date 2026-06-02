@@ -467,9 +467,8 @@ func runUnsetup(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	if err := setupStep(3, "Unset HTTPS_PROXY for GUI apps + remove persistence agent", uninstallGUIProxyEnv); err != nil {
-		// Non-fatal on non-macOS.
-	}
+	// Non-fatal on non-macOS — run the step but ignore any error.
+	_ = setupStep(3, "Unset HTTPS_PROXY for GUI apps + remove persistence agent", uninstallGUIProxyEnv)
 
 	if err := setupStep(4, "Remove CA cert from system trust store", func() (string, error) {
 		return "", proxy.UninstallCert()

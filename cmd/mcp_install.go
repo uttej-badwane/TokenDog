@@ -77,7 +77,7 @@ func runMCPInstall(_ *cobra.Command, _ []string) error {
 	}
 	switch state {
 	case mcpconfig.StateUnsupportedOS:
-		return fmt.Errorf("Claude Desktop config path is unknown for your OS — set TD_CLAUDE_DESKTOP_CONFIG to its full path and re-run")
+		return fmt.Errorf("config path for Claude Desktop is unknown on your OS — set TD_CLAUDE_DESKTOP_CONFIG to its full path and re-run")
 	case mcpconfig.StateMalformed:
 		path, _ := mcpconfig.ConfigPath()
 		return fmt.Errorf("config at %s is not valid JSON; fix it manually before running install", path)

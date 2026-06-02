@@ -29,8 +29,6 @@ func gitStatus(output string) string {
 
 	var section string
 	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
 		switch {
 		case strings.HasPrefix(line, "On branch "):
 			branch = strings.TrimPrefix(line, "On branch ")
@@ -70,8 +68,9 @@ func gitStatus(output string) string {
 					deleted = append(deleted, strings.TrimSpace(strings.SplitN(file, "deleted:", 2)[1]))
 				}
 			}
-		case trimmed == "" || strings.HasPrefix(trimmed, "(") || strings.HasPrefix(trimmed, "no changes"):
-			// skip hints and empty lines
+		default:
+			// Everything else — blank lines, "(use ...)" hints, the
+			// "no changes added" footer — is intentionally skipped.
 		}
 	}
 

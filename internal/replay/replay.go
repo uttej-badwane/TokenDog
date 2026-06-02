@@ -358,7 +358,7 @@ func firstWord(s string) string {
 			c := p[i]
 			isAlpha := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 			isDigit := c >= '0' && c <= '9'
-			if !(isAlpha || isDigit || c == '_') {
+			if !isAlpha && !isDigit && c != '_' {
 				ok = false
 				break
 			}

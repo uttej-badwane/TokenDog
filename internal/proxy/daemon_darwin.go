@@ -203,7 +203,6 @@ func launchctlPID() (pid int, loaded bool) {
 	if err != nil {
 		return 0, false
 	}
-	loaded = true
 	for _, line := range strings.Split(string(out), "\n") {
 		line = strings.TrimSpace(line)
 		// Look for `"PID" = N;`. PID is missing/0 when not running.
