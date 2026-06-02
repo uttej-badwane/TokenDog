@@ -60,7 +60,8 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - uses: golangci/golangci-lint-action@v6
+      # action v7+ is required for golangci-lint v2.
+      - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.12.2
 
