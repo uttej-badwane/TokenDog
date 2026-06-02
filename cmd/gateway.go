@@ -13,6 +13,7 @@ import (
 
 	// Register the provider adapters so Dispatch can route by path.
 	_ "tokendog/internal/adapter/anthropic"
+	_ "tokendog/internal/adapter/bedrock"
 	_ "tokendog/internal/adapter/openai"
 	"tokendog/internal/analytics"
 	"tokendog/internal/core"
@@ -43,8 +44,11 @@ Then:
 Why this exists: a CA-installing MITM is a non-starter for most security
 teams. An explicit base_url is a deliberate, auditable opt-in — no
 interception of traffic the user didn't redirect, no trust-store changes.
-The same engine (internal/core) handles both Anthropic (/v1/messages) and
-OpenAI (/v1/chat/completions) requests by path.`,
+The same engine (internal/core) routes by request path: Anthropic
+(/v1/messages), OpenAI (/v1/chat/completions), and Amazon Bedrock Converse
+(/model/{id}/converse). Point --upstream at the matching provider:
+
+  td gateway --upstream https://bedrock-runtime.us-east-1.amazonaws.com`,
 	RunE: runGateway,
 }
 
