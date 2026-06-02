@@ -1,22 +1,27 @@
-// Package pricing maps Anthropic model identifiers to per-million-token
-// rates. Modeled after ccusage/LiteLLM's pricing layer but scoped to the
-// models TokenDog actually targets (Claude). The data is embedded — no
-// network fetch at runtime — but structured so a future `td pricing
-// refresh` could overwrite it from LiteLLM's public JSON.
+// Package pricing maps model identifiers to per-million-token rates across
+// providers (Anthropic, OpenAI, Bedrock, Gemini). Modeled after
+// ccusage/LiteLLM's pricing layer. The data is embedded — no network fetch at
+// runtime — but structured so a future `td pricing refresh` could overwrite it
+// from LiteLLM's public JSON.
 //
 // Sources of truth:
 //   - https://docs.anthropic.com/en/docs/about-claude/pricing
+//   - https://openai.com/api/pricing/
+//   - https://aws.amazon.com/bedrock/pricing/
 //   - https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json
 //
-// Last verified: 2026-05. Update DataVersion when prices change so callers
+// Last verified: 2026-06. Update DataVersion when prices change so callers
 // can detect stale embedded data.
 package pricing
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 // DataVersion ticks on each pricing update. Useful for cache invalidation
 // and for `td gain` to footnote when its pricing data was last touched.
-const DataVersion = "2026-05-06"
+const DataVersion = "2026-06-02"
 
 // Rate holds per-million-token costs for a single model. Output rates are
 // not used by td gain (tool-result data flows in as input on subsequent
@@ -94,6 +99,82 @@ var rates = map[string]Rate{
 		CacheReadPerM:  0.03,
 		CacheWritePerM: 0.30,
 	},
+
+	// --- OpenAI ---
+	"gpt-4o": {
+		Model: "gpt-4o", InputPerM: 2.50, OutputPerM: 10.0, CacheReadPerM: 1.25,
+	},
+	"gpt-4o-mini": {
+		Model: "gpt-4o-mini", InputPerM: 0.15, OutputPerM: 0.60, CacheReadPerM: 0.075,
+	},
+	"gpt-4.1": {
+		Model: "gpt-4.1", InputPerM: 2.0, OutputPerM: 8.0, CacheReadPerM: 0.50,
+	},
+	"gpt-4.1-mini": {
+		Model: "gpt-4.1-mini", InputPerM: 0.40, OutputPerM: 1.60, CacheReadPerM: 0.10,
+	},
+	"o3": {
+		Model: "o3", InputPerM: 2.0, OutputPerM: 8.0, CacheReadPerM: 0.50,
+	},
+	"o4-mini": {
+		Model: "o4-mini", InputPerM: 1.10, OutputPerM: 4.40, CacheReadPerM: 0.275,
+	},
+
+	// --- Amazon Bedrock (Claude-hosted + Amazon Nova). Keys are TokenDog
+	// canonical ids; the Bedrock Converse model id resolves to these via
+	// ProviderDefault until per-request model extraction lands. ---
+	"bedrock-claude-sonnet": {
+		Model: "bedrock-claude-sonnet", InputPerM: 3.0, OutputPerM: 15.0, CacheReadPerM: 0.30,
+	},
+	"bedrock-claude-haiku": {
+		Model: "bedrock-claude-haiku", InputPerM: 0.80, OutputPerM: 4.0, CacheReadPerM: 0.08,
+	},
+	"amazon-nova-pro": {
+		Model: "amazon-nova-pro", InputPerM: 0.80, OutputPerM: 3.20, CacheReadPerM: 0.20,
+	},
+	"amazon-nova-lite": {
+		Model: "amazon-nova-lite", InputPerM: 0.06, OutputPerM: 0.24, CacheReadPerM: 0.015,
+	},
+
+	// --- Google Gemini (pricing-ready; no adapter yet) ---
+	"gemini-2.0-flash": {
+		Model: "gemini-2.0-flash", InputPerM: 0.10, OutputPerM: 0.40, CacheReadPerM: 0.025,
+	},
+	"gemini-1.5-pro": {
+		Model: "gemini-1.5-pro", InputPerM: 1.25, OutputPerM: 5.0, CacheReadPerM: 0.3125,
+	},
+}
+
+// providerDefaults maps a provider id (as core.Provider.Name reports) to the
+// model TokenDog prices its records at when the exact model isn't captured —
+// the dominant agentic model for each provider. An empty/anthropic provider
+// keeps the conservative Anthropic default.
+var providerDefaults = map[string]string{
+	"openai":  "gpt-4o",
+	"bedrock": "bedrock-claude-sonnet",
+	"gemini":  "gemini-2.0-flash",
+}
+
+// ProviderDefault returns the canonical model id used to price a record from
+// the given provider when its exact model is unknown.
+func ProviderDefault(provider string) string {
+	if m, ok := providerDefaults[provider]; ok {
+		return m
+	}
+	return DefaultModel
+}
+
+// LookupFor resolves a rate for a record's (provider, model). When the model
+// is known it wins; otherwise the provider's default model rate is used (and
+// ok=false flags the result as imputed).
+func LookupFor(provider, model string) (Rate, bool) {
+	if model != "" {
+		if r, ok := Lookup(model); ok {
+			return r, true
+		}
+	}
+	r, _ := Lookup(ProviderDefault(provider))
+	return r, false
 }
 
 // DefaultModel is the fallback when an analytics record has no model tag —
@@ -111,12 +192,18 @@ func Lookup(model string) (Rate, bool) {
 	if r, ok := rates[model]; ok {
 		return r, true
 	}
-	// Prefix match for version-suffixed ids like "claude-opus-4-7-20260418"
-	// or "anthropic/claude-haiku-4-5".
+	// Prefix match for version-suffixed ids like "claude-opus-4-7-20260418",
+	// "anthropic/claude-haiku-4-5", or "gpt-4o-2024-08-06". Try the LONGEST
+	// matching prefix first so "gpt-4o-mini-…" doesn't collide with "gpt-4o".
 	clean := strings.TrimPrefix(model, "anthropic/")
-	for prefix, r := range rates {
+	prefixes := make([]string, 0, len(rates))
+	for p := range rates {
+		prefixes = append(prefixes, p)
+	}
+	sort.Slice(prefixes, func(i, j int) bool { return len(prefixes[i]) > len(prefixes[j]) })
+	for _, prefix := range prefixes {
 		if strings.HasPrefix(clean, prefix) {
-			return r, true
+			return rates[prefix], true
 		}
 	}
 	return rates[DefaultModel], false
