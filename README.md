@@ -10,7 +10,7 @@
    ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝  ╚═════╝  ╚═════╝
 </pre>
 
-### 🐕 Compress the tool output your AI agent is about to pay for — *losslessly, before it's billed.*
+### 🐶 Compress the tool output your AI agent is about to pay for — *losslessly, before it's billed.*
 
 [![CI](https://github.com/uttej-badwane/TokenDog/actions/workflows/test.yml/badge.svg)](https://github.com/uttej-badwane/TokenDog/actions/workflows/test.yml)
 [![Release](https://img.shields.io/github/v/release/uttej-badwane/TokenDog)](https://github.com/uttej-badwane/TokenDog/releases)
