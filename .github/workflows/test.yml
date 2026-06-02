@@ -15,16 +15,21 @@ permissions:
 # the Node 20 runtime is removed from runners.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Match go.mod's `go 1.23.0` directive so CI uses the same toolchain the
+  # module declares, instead of relying on GOTOOLCHAIN=auto to silently fetch
+  # it after pinning an older version.
+  GO_VERSION: "1.23"
 
 jobs:
   test:
+    name: lint + race tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: ${{ env.GO_VERSION }}
           cache: true
 
       - name: gofmt
@@ -42,3 +47,40 @@ jobs:
 
       - name: go test
         run: go test -race -count=1 ./...
+
+  # Compile on every target OS. The codebase has platform-specific files
+  # (daemon_{darwin,linux,windows}.go, install_*.go), so an Ubuntu-only build
+  # can't catch a macOS/Windows compile break — this matrix does.
+  build:
+    name: build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - run: go build ./...
+
+  # Known-vulnerability scan of stdlib + reachable dependencies. Report-only:
+  # the job stays green and emits a warning annotation when advisories are
+  # found, so it surfaces issues in the PR without blocking on a transitive
+  # CVE. Read the job log for the details; flip to blocking (drop the `|| …`)
+  # once the team has triaged the findings.
+  vulncheck:
+    name: govulncheck (report-only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./... || echo "::warning title=govulncheck::known advisories found (report-only, non-blocking) — see job log"
