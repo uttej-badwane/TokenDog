@@ -79,3 +79,45 @@ func TestModelsSortedByCost(t *testing.T) {
 		prev = curr
 	}
 }
+
+func TestOpenAIAndBedrockRatesPresent(t *testing.T) {
+	for _, m := range []string{"gpt-4o", "gpt-4o-mini", "bedrock-claude-sonnet", "amazon-nova-lite", "gemini-2.0-flash"} {
+		if r, ok := Lookup(m); !ok || r.InputPerM <= 0 {
+			t.Errorf("expected a rate for %q, got %+v ok=%v", m, r, ok)
+		}
+	}
+}
+
+func TestLookupLongestPrefixWins(t *testing.T) {
+	// "gpt-4o-mini-2024-…" must resolve to gpt-4o-mini, NOT gpt-4o.
+	r, ok := Lookup("gpt-4o-mini-2024-07-18")
+	if !ok || r.Model != "gpt-4o-mini" {
+		t.Errorf("versioned gpt-4o-mini resolved to %q (ok=%v), want gpt-4o-mini", r.Model, ok)
+	}
+	r, ok = Lookup("gpt-4o-2024-08-06")
+	if !ok || r.Model != "gpt-4o" {
+		t.Errorf("versioned gpt-4o resolved to %q, want gpt-4o", r.Model)
+	}
+}
+
+func TestProviderDefaultAndLookupFor(t *testing.T) {
+	if ProviderDefault("openai") != "gpt-4o" {
+		t.Error("openai default should be gpt-4o")
+	}
+	if ProviderDefault("bedrock") != "bedrock-claude-sonnet" {
+		t.Error("bedrock default should be bedrock-claude-sonnet")
+	}
+	if ProviderDefault("") != DefaultModel {
+		t.Error("empty provider should keep the Anthropic default")
+	}
+	// Unknown model on a known provider → provider default, imputed.
+	r, ok := LookupFor("openai", "")
+	if ok || r.Model != "gpt-4o" {
+		t.Errorf("LookupFor(openai, '') = %q ok=%v, want gpt-4o imputed", r.Model, ok)
+	}
+	// Known model wins regardless of provider.
+	r, ok = LookupFor("openai", "gpt-4o-mini")
+	if !ok || r.Model != "gpt-4o-mini" {
+		t.Errorf("LookupFor with explicit model should resolve exactly, got %q", r.Model)
+	}
+}
