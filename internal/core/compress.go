@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
+	"unicode"
 
 	"tokendog/internal/filter"
 	"tokendog/internal/hook"
@@ -78,7 +80,7 @@ func Compress(conv *Conversation, opts Options) []Saving {
 
 		// Reversible stash of whatever's left (opt-in).
 		if opts.Reversible {
-			if reversed, ok := applyReversible(r.Command, filtered, opts.StashMinBytes); ok {
+			if reversed, ok := applyReversible(r.Command, filtered, opts.StashMinBytes, opts.Prose); ok {
 				r.Replacement, r.Replaced = reversed, true
 				savings = append(savings, Saving{r.Command + " (reversible)", raw, reversed})
 				continue
@@ -146,7 +148,7 @@ func dedupLabel(cmd string) string {
 // when the content is large enough to be worth it. Returns ("", false) when
 // it's too small, eliding wouldn't shrink it, or the stash write fails — in
 // every false case the caller keeps the lossless path.
-func applyReversible(command, content string, minBytes int) (string, bool) {
+func applyReversible(command, content string, minBytes int, prose ProseFunc) (string, bool) {
 	if minBytes <= 0 {
 		minBytes = stash.MinSize()
 	}
@@ -157,11 +159,64 @@ func applyReversible(command, content string, minBytes int) (string, bool) {
 	if err != nil {
 		return "", false
 	}
+
+	// Prose-aware preview: for natural-language content, a learned compressor
+	// keeps high-signal tokens throughout instead of crude head/tail
+	// truncation. It's lossy, but the full original is stashed above
+	// (recoverable via td_retrieve), so it stays quality-neutral by the
+	// recover-rate measure the eval harness checks. Only runs when a prose
+	// compressor was injected AND the content actually looks like prose
+	// (never on logs/JSON/code — see looksLikeProse).
+	if prose != nil && looksLikeProse(content) {
+		if compressed, ok := prose(content); ok {
+			out := compressed + "\n" + stash.Marker(id, len(content))
+			if len(out) < len(content) {
+				return out, true
+			}
+		}
+	}
+
 	preview := stash.Preview(id, content, previewHeadLines, previewTailLines)
 	if len(preview) >= len(content) {
 		return "", false
 	}
 	return preview, true
+}
+
+// looksLikeProse is a conservative heuristic: natural-language text is
+// letter-heavy and flows in long lines/paragraphs, unlike JSON/XML (symbol
+// prefixes), logs (many short, digit/punctuation-heavy lines), or code
+// (symbol-dense). When in doubt it returns false, so the safe head/tail
+// preview is used instead of an ML compressor that isn't meant for structure.
+func looksLikeProse(s string) bool {
+	t := strings.TrimSpace(s)
+	if t == "" {
+		return false
+	}
+	switch t[0] {
+	case '{', '[', '<': // JSON / XML / HTML
+		return false
+	}
+	letters, nonSpace := 0, 0
+	for _, r := range t {
+		if r == ' ' || r == '\n' || r == '\t' || r == '\r' {
+			continue
+		}
+		nonSpace++
+		if unicode.IsLetter(r) {
+			letters++
+		}
+	}
+	if nonSpace == 0 {
+		return false
+	}
+	// Prose is letter-dominant; logs/code/tables carry many digits & symbols.
+	if float64(letters)/float64(nonSpace) < 0.75 {
+		return false
+	}
+	// Prose flows in long lines; logs/tables are many short ones.
+	lines := strings.Count(t, "\n") + 1
+	return len(t)/lines >= 40
 }
 
 func humanBytes(n int) string {

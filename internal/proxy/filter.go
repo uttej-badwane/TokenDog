@@ -8,6 +8,7 @@ import (
 	_ "tokendog/internal/adapter/anthropic" // registers the Anthropic provider
 	"tokendog/internal/analytics"
 	"tokendog/internal/core"
+	"tokendog/internal/prose"
 )
 
 // FilterHandler is the proxy's RequestHandler. It is now a thin frontend over
@@ -20,7 +21,9 @@ import (
 // Cache safety and "last message only" semantics are enforced inside the
 // adapters/engine, not here.
 func FilterHandler(req *http.Request, body []byte) ([]byte, error) {
-	out, savings, provider, err := core.Dispatch(req.URL.Path, body, core.OptionsFromEnv())
+	opts := core.OptionsFromEnv()
+	opts.Prose = prose.FromEnv() // nil unless TD_PROSE_ENDPOINT is set
+	out, savings, provider, err := core.Dispatch(req.URL.Path, body, opts)
 	if err != nil {
 		// Engine trouble — never send a payload we can't trust. Fall back to
 		// the original bytes.
