@@ -105,17 +105,30 @@ TokenDog is a **provider-neutral compression engine** with swappable frontends �
 
 ```
         frontends                    engine                providers
-┌────────────────────────┐   ┌───────────────────┐   ┌──────────────────┐
-│ td proxy   (MITM)      │   │                   │   │ anthropic        │
-│ td gateway (base_url)  │──▶│  core.Dispatch    │──▶│  /v1/messages    │
-│ (future: SDK / LiteLLM │   │  core.Compress    │   │ openai           │
-│  / Bedrock middleware) │   │                   │   │  /v1/chat/compl. │
-└────────────────────────┘   └───────────────────┘   └──────────────────┘
+┌────────────────────────┐   ┌───────────────────┐   ┌──────────────────────┐
+│ td proxy   (MITM)      │   │                   │   │ anthropic            │
+│ td gateway (base_url)  │──▶│  core.Dispatch    │──▶│  /v1/messages        │
+│ (front an existing     │   │  core.Compress    │   │ openai               │
+│  gateway, e.g. LiteLLM)│   │                   │   │  /v1/chat/completions│
+└────────────────────────┘   └───────────────────┘   │ bedrock              │
+                                                      │  /model/…/converse   │
+                                                      └──────────────────────┘
 ```
 
 - **`internal/core`** — the engine. `Compress(conversation) → savings` over a provider-neutral `Conversation`. Knows nothing about HTTP, analytics, or any vendor. This is the reusable, testable heart.
-- **`internal/adapter/*`** — translate one wire format (Anthropic Messages, OpenAI Chat Completions) into a `Conversation` and write replacements back. Adding a provider is one adapter; the engine is untouched.
-- **frontends** — supply transport + the analytics sink. The MITM proxy and the explicit-base_url `td gateway` are two; an SDK middleware or LiteLLM callback is the same engine wired differently.
+- **`internal/adapter/*`** — translate one wire format (Anthropic Messages, OpenAI Chat Completions, Bedrock Converse) into a `Conversation` and write replacements back. Adding a provider is one adapter; the engine is untouched.
+- **frontends** — supply transport + the analytics sink. The MITM proxy and the explicit-base_url `td gateway` are two; an SDK middleware is the same engine wired differently.
+
+### Putting the gateway in front of an existing AI gateway (LiteLLM, etc.)
+
+If your org already routes LLM traffic through a gateway like LiteLLM, point `td gateway --upstream` at it (or sit it between your clients and the gateway). TokenDog compresses by request shape — Anthropic, OpenAI, and Bedrock Converse — so it works wherever those requests flow:
+
+```bash
+td gateway --upstream http://litellm.internal:4000        # in front of LiteLLM
+td gateway --upstream https://bedrock-runtime.us-east-1.amazonaws.com   # Bedrock
+```
+
+(A native in-process LiteLLM callback would be a Python package and is out of scope here — the gateway gives the same result without leaving Go or touching the LiteLLM process.)
 
 ## Deployment modes
 
@@ -312,6 +325,7 @@ Exposes 6 tools to Claude Desktop: five read-only analytics queries (so you can 
 │   ├── core/                  provider-neutral engine: Compress + Dispatch
 │   ├── adapter/
 │   │   ├── anthropic/         Messages API wire ↔ Conversation
+│   │   ├── bedrock/           Bedrock Converse wire ↔ Conversation
 │   │   └── openai/            Chat Completions wire ↔ Conversation
 │   ├── analytics/             history.jsonl + per-model aggregation
 │   ├── cache/                 30s output cache for repeated commands (hook mode)
