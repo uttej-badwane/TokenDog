@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-02
+
 ### Added
 - **Opt-in prose route (reversible-gated).** When a prose compressor is wired up (`TD_PROSE_ENDPOINT` → a localhost sidecar), the engine uses it to build a denser reversible preview for **natural-language** content instead of crude head/tail truncation. It runs **only inside the reversible pass** (so the full original is always stashed and recoverable via `td_retrieve` — lossy on the wire, never lossy in effect) and **only on content that looks like prose** (`looksLikeProse` rejects JSON/logs/code, where TokenDog's lossless filters win). The engine stays I/O-free: it calls an injected `core.ProseFunc`; the HTTP-to-sidecar client lives in `internal/prose` and the proxy/gateway inject it. Off by default; the client times out (`TD_PROSE_TIMEOUT_MS`, default 2s) and falls back to the head/tail preview on any error. A reference sidecar + protocol is in `experiments/prose-sidecar/`.
 
