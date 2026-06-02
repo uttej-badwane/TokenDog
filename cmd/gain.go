@@ -15,16 +15,17 @@ import (
 )
 
 var (
-	gainHistory   bool
-	gainSession   string
-	gainByModel   bool
-	gainByProject bool
-	gainDaily     bool
-	gainMonthly   bool
-	gainSince     string
-	gainUntil     string
-	gainJSON      bool
-	gainWithSpend bool
+	gainHistory    bool
+	gainSession    string
+	gainByModel    bool
+	gainByProject  bool
+	gainByProvider bool
+	gainDaily      bool
+	gainMonthly    bool
+	gainSince      string
+	gainUntil      string
+	gainJSON       bool
+	gainWithSpend  bool
 )
 
 var gainCmd = &cobra.Command{
@@ -45,6 +46,7 @@ func init() {
 	gainCmd.Flags().StringVar(&gainSession, "session", "", "Show savings for a specific session id (or 'current' for the active session)")
 	gainCmd.Flags().BoolVar(&gainByModel, "by-model", false, "Show per-model breakdown using model-specific Anthropic rates")
 	gainCmd.Flags().BoolVar(&gainByProject, "by-project", false, "Show per-project breakdown (resolved via .git root above the cwd at exec time)")
+	gainCmd.Flags().BoolVar(&gainByProvider, "by-provider", false, "Show per-provider breakdown (anthropic / openai / bedrock)")
 	gainCmd.Flags().BoolVar(&gainDaily, "daily", false, "Aggregate by calendar day")
 	gainCmd.Flags().BoolVar(&gainMonthly, "monthly", false, "Aggregate by calendar month")
 	gainCmd.Flags().StringVar(&gainSince, "since", "", "Only include records on or after this date (YYYY-MM-DD or relative like 7d/1m)")
@@ -90,6 +92,9 @@ func runGain(_ *cobra.Command, _ []string) error {
 	}
 	if gainByProject {
 		out += analytics.RenderByProject(records)
+	}
+	if gainByProvider {
+		out += analytics.RenderByProvider(records)
 	}
 	if gainWithSpend {
 		out += renderWithSpend(records)

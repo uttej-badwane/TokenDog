@@ -27,9 +27,12 @@ func TestDispatchRoutesByPath(t *testing.T) {
 				"content": "On branch main\n\tmodified:   foo.go\n"},
 		},
 	})
-	out, _, err := core.Dispatch("/v1/chat/completions", oaBody, core.Options{})
+	out, _, provider, err := core.Dispatch("/v1/chat/completions", oaBody, core.Options{})
 	if err != nil || len(out) >= len(oaBody) {
 		t.Errorf("OpenAI path not compressed: err=%v %d->%d", err, len(oaBody), len(out))
+	}
+	if provider != "openai" {
+		t.Errorf("expected provider=openai, got %q", provider)
 	}
 
 	// Anthropic-shaped request routed to the anthropic adapter.
@@ -45,16 +48,19 @@ func TestDispatchRoutesByPath(t *testing.T) {
 			}}},
 		},
 	})
-	out, _, err = core.Dispatch("/v1/messages", anBody, core.Options{})
+	out, _, provider, err = core.Dispatch("/v1/messages", anBody, core.Options{})
 	if err != nil || len(out) >= len(anBody) {
 		t.Errorf("Anthropic path not compressed: err=%v %d->%d", err, len(anBody), len(out))
+	}
+	if provider != "anthropic" {
+		t.Errorf("expected provider=anthropic, got %q", provider)
 	}
 
 	// Unknown path passes through unchanged.
 	misc := []byte(`{"hello":"world"}`)
-	out, sav, _ := core.Dispatch("/v1/models", misc, core.Options{})
-	if string(out) != string(misc) || len(sav) != 0 {
-		t.Error("unknown path should pass through untouched")
+	out, sav, provider, _ := core.Dispatch("/v1/models", misc, core.Options{})
+	if string(out) != string(misc) || len(sav) != 0 || provider != "" {
+		t.Error("unknown path should pass through untouched with empty provider")
 	}
 }
 
