@@ -10,15 +10,21 @@
    ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝  ╚═════╝  ╚═════╝
 </pre>
 
-### 🐕 Compress the tool output your AI agent is about to pay for — *losslessly, before it's billed.*
+### 🐶 Compress the tool output your AI agent is about to pay for — *losslessly, before it's billed.*
 
 [![CI](https://github.com/uttej-badwane/TokenDog/actions/workflows/test.yml/badge.svg)](https://github.com/uttej-badwane/TokenDog/actions/workflows/test.yml)
 [![Release](https://img.shields.io/github/v/release/uttej-badwane/TokenDog)](https://github.com/uttej-badwane/TokenDog/releases)
-[![Go](https://img.shields.io/badge/go-1.22-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Go](https://img.shields.io/github/go-mod/go-version/uttej-badwane/TokenDog?logo=go&logoColor=white&color=00ADD8&label=go)](go.mod)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-<em>Anthropic · OpenAI · Bedrock &nbsp;·&nbsp; cache-safe by construction &nbsp;·&nbsp; single Go binary &nbsp;·&nbsp; nothing leaves your machine</em>
+**Compresses for**
+&nbsp;
+[![Anthropic](https://img.shields.io/badge/Anthropic-Messages_API-D97757?labelColor=2b2b2b)](#-deployment-modes)
+[![OpenAI](https://img.shields.io/badge/OpenAI-Chat_Completions-10A37F?labelColor=2b2b2b)](#-deployment-modes)
+[![AWS Bedrock](https://img.shields.io/badge/AWS_Bedrock-Converse-FF9900?labelColor=2b2b2b)](#-deployment-modes)
+
+<em>cache-safe by construction &nbsp;·&nbsp; single Go binary &nbsp;·&nbsp; nothing leaves your machine</em>
 
 </div>
 
