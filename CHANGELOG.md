@@ -5,6 +5,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Opt-in prose route (reversible-gated).** When a prose compressor is wired up (`TD_PROSE_ENDPOINT` → a localhost sidecar), the engine uses it to build a denser reversible preview for **natural-language** content instead of crude head/tail truncation. It runs **only inside the reversible pass** (so the full original is always stashed and recoverable via `td_retrieve` — lossy on the wire, never lossy in effect) and **only on content that looks like prose** (`looksLikeProse` rejects JSON/logs/code, where TokenDog's lossless filters win). The engine stays I/O-free: it calls an injected `core.ProseFunc`; the HTTP-to-sidecar client lives in `internal/prose` and the proxy/gateway inject it. Off by default; the client times out (`TD_PROSE_TIMEOUT_MS`, default 2s) and falls back to the head/tail preview on any error. A reference sidecar + protocol is in `experiments/prose-sidecar/`.
+
 ### Changed
 - **Architecture: engine decoupled from the MITM proxy.** The compression logic moved into a provider-neutral `internal/core` package with a clean `Compress(conversation) → savings` API. Wire-format handling lives in pluggable adapters (`internal/adapter/anthropic`, `internal/adapter/openai`) behind a `core.Provider` interface + `core.Dispatch(path, body)` router. The HTTPS proxy is now a thin frontend over this engine — one deployment of several, not *the* product. This is the foundation for gateway/SDK deployments, multi-provider support, and an offline eval harness, none of which should require a CA cert or Anthropic-only assumptions. Existing proxy behavior is unchanged (same tests pass).
 

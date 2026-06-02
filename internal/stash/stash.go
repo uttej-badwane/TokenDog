@@ -270,6 +270,18 @@ func marker(id string, elidedLines, origBytes int) string {
 		"\" to get the full original output.]"
 }
 
+// Marker renders the [td:STASHED …] line used when a result is replaced by a
+// lossy stand-in that isn't a head/tail preview (e.g. prose compression). It
+// carries the same id + retrieval instructions so td_retrieve recovers the
+// original, and the [td:STASHED id=…] prefix keeps it recognizable to the eval
+// harness's recoverability check.
+func Marker(id string, origBytes int) string {
+	return "[td:STASHED id=" + id +
+		" — prose-compressed; the full " + humanBytes(origBytes) +
+		" original is retrievable via the td_retrieve tool (tokendog MCP server) " +
+		"with id=\"" + id + "\".]"
+}
+
 func humanBytes(n int) string {
 	switch {
 	case n >= 1<<20:

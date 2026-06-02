@@ -17,6 +17,7 @@ import (
 	_ "tokendog/internal/adapter/openai"
 	"tokendog/internal/analytics"
 	"tokendog/internal/core"
+	"tokendog/internal/prose"
 )
 
 var (
@@ -81,7 +82,9 @@ func runGateway(_ *cobra.Command, _ []string) error {
 			body, err := io.ReadAll(r.Body)
 			r.Body.Close()
 			if err == nil {
-				out, savings, provider, derr := core.Dispatch(r.URL.Path, body, core.OptionsFromEnv())
+				opts := core.OptionsFromEnv()
+				opts.Prose = prose.FromEnv() // nil unless TD_PROSE_ENDPOINT is set
+				out, savings, provider, derr := core.Dispatch(r.URL.Path, body, opts)
 				if derr != nil {
 					out = body // never forward something we couldn't trust
 				}

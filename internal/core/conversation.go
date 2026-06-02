@@ -68,7 +68,20 @@ type Options struct {
 	// StashMinBytes overrides the reversible-stash size threshold. 0 means
 	// "use the stash package default".
 	StashMinBytes int
+	// Prose, when set, is a lossy natural-language compressor (e.g. an ML
+	// model behind a localhost sidecar). The engine uses it ONLY inside the
+	// reversible pass to build a denser preview for prose content — the full
+	// original is always stashed and recoverable via td_retrieve, so the
+	// lossiness never costs correctness, only an optional retrieval. nil =
+	// disabled. Frontends inject it (internal/prose) so the engine stays
+	// I/O-free.
+	Prose ProseFunc
 }
+
+// ProseFunc compresses natural-language text, returning (compressed, ok).
+// ok=false means "couldn't help — leave it alone". Implementations live in
+// frontends (internal/prose), keeping internal/core free of HTTP/network.
+type ProseFunc func(text string) (string, bool)
 
 const (
 	envNoDedup    = "TD_NO_DEDUP"
