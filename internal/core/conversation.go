@@ -16,6 +16,7 @@ import (
 	"os"
 	"strings"
 
+	"tokendog/internal/policy"
 	"tokendog/internal/stash"
 )
 
@@ -64,18 +65,49 @@ type Options struct {
 	// Reversible enables stash+preview of large outputs (opt-in; changes the
 	// default lossless behavior, so it is off unless explicitly requested).
 	Reversible bool
+	// StashMinBytes overrides the reversible-stash size threshold. 0 means
+	// "use the stash package default".
+	StashMinBytes int
 }
 
-const envNoDedup = "TD_NO_DEDUP"
+const (
+	envNoDedup    = "TD_NO_DEDUP"
+	envReversible = "TD_REVERSIBLE"
+	envStashMin   = "TD_STASH_MIN"
+)
 
-// OptionsFromEnv derives Options from the same environment variables the
-// proxy has always honored, so behavior is unchanged when the engine moved
-// out from under it.
+// OptionsFromEnv derives Options with precedence: an explicitly-set
+// environment variable (the developer's local override) wins over the managed
+// policy file, which wins over the built-in default. This keeps existing
+// env-driven behavior unchanged while letting a platform team set a fleet
+// baseline via policy.
 func OptionsFromEnv() Options {
-	return Options{
-		Dedup:      !envTrue(envNoDedup),
-		Reversible: stash.Enabled(),
+	pol := policy.Load()
+
+	o := Options{Dedup: true, Reversible: false, StashMinBytes: 0}
+
+	// Managed-policy baseline.
+	if pol.Dedup != nil {
+		o.Dedup = *pol.Dedup
 	}
+	if pol.Reversible != nil {
+		o.Reversible = *pol.Reversible
+	}
+	if pol.StashMinBytes != nil {
+		o.StashMinBytes = *pol.StashMinBytes
+	}
+
+	// Explicit local env overrides.
+	if _, set := os.LookupEnv(envNoDedup); set {
+		o.Dedup = !envTrue(envNoDedup)
+	}
+	if _, set := os.LookupEnv(envReversible); set {
+		o.Reversible = stash.Enabled()
+	}
+	if _, set := os.LookupEnv(envStashMin); set {
+		o.StashMinBytes = stash.MinSize()
+	}
+	return o
 }
 
 func envTrue(name string) bool {

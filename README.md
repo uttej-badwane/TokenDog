@@ -246,6 +246,30 @@ td eval --corpus ./fixtures # your own *.json fixtures
 td eval --json              # machine-readable
 ```
 
+## Fleet observability & managed policy (platform teams)
+
+The same engine that runs on one laptop can be governed and measured across an org.
+
+**Reporting** — opt-in, privacy-preserving. The push payload is aggregates only (counts, bytes, tokens) plus a hashed machine id; it never contains command strings, arguments, or tool output:
+
+```bash
+td fleet push --endpoint https://collector.internal/tokendog   # report savings
+td fleet push --dry-run                                         # preview the exact payload
+```
+
+**Managed policy** — a platform team distributes one config that governs the engine's behavior, so developers don't hand-set env vars:
+
+```bash
+td fleet pull https://config.internal/tokendog/policy.json   # install managed policy
+td fleet policy                                              # show effective config
+```
+
+```json
+{ "dedup": true, "reversible": false, "stash_min_bytes": 4096 }
+```
+
+Precedence is **explicit env var > managed policy > built-in default** — policy sets the baseline, but a developer who sets `TD_NO_DEDUP` / `TD_REVERSIBLE` / `TD_STASH_MIN` locally always wins. So central governance never traps anyone.
+
 ## Honest savings expectations
 
 - Tool output (the part TD touches) is typically **30-50% of your Anthropic bill**.
@@ -319,6 +343,7 @@ Exposes 6 tools to Claude Desktop: five read-only analytics queries (so you can 
 │   ├── filter/                ~25 per-tool compactors + universal Guard
 │   ├── hook/                  PreToolUse rewrite logic + bash chain parsing
 │   ├── mcpconfig/             Claude Desktop config management
+│   ├── policy/                centrally-managed fleet policy (dedup/reversible/threshold)
 │   ├── pricing/               embedded Anthropic model pricing
 │   ├── proxy/                 thin MITM frontend over core (cert + launchd)
 │   ├── redact/                secret-scrubbing regex pack
