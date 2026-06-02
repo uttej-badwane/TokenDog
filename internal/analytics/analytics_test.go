@@ -101,3 +101,24 @@ func TestNewRecordForProviderSetsProviderAndCounts(t *testing.T) {
 		t.Errorf("legacy NewRecord should leave Provider empty, got %q", legacy.Provider)
 	}
 }
+
+func TestSummarizePricesByProvider(t *testing.T) {
+	// 1,000,000 tokens saved on an OpenAI record should price at gpt-4o's
+	// $2.50/M, not Anthropic Opus's $15/M.
+	recs := []Record{
+		{Command: "gateway: x", Provider: "openai", RawTokens: 1_000_000, FilteredTokens: 0},
+	}
+	sum, _ := Summarize(recs)
+	usd := sum.USDSaved()
+	if usd < 2.0 || usd > 3.5 {
+		t.Errorf("openai 1M tokens should price near $2.50 (gpt-4o), got $%.2f", usd)
+	}
+
+	// Same tokens on a legacy (no provider) record stays at the Anthropic
+	// default — back-compat.
+	legacy := []Record{{Command: "proxy: x", RawTokens: 1_000_000, FilteredTokens: 0}}
+	sumL, _ := Summarize(legacy)
+	if sumL.USDSaved() < 14 {
+		t.Errorf("legacy record should price at Anthropic default (~$15), got $%.2f", sumL.USDSaved())
+	}
+}
