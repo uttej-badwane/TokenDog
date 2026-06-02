@@ -122,11 +122,11 @@ func renderWithSpend(records []analytics.Record) string {
 	dash := strings.Repeat("─", 60)
 	b.WriteString("\nYour Anthropic spend (via ccusage)\n")
 	b.WriteString(dash + "\n")
-	b.WriteString(fmt.Sprintf("  %-22s $%.2f\n", "Total spend:", out.totalUSD))
-	b.WriteString(fmt.Sprintf("  %-22s $%.4f\n", "TD saved (lifetime):", tdUSD))
+	fmt.Fprintf(&b, "  %-22s $%.2f\n", "Total spend:", out.totalUSD)
+	fmt.Fprintf(&b, "  %-22s $%.4f\n", "TD saved (lifetime):", tdUSD)
 	if out.totalUSD > 0 {
 		pct := tdUSD / out.totalUSD * 100
-		b.WriteString(fmt.Sprintf("  %-22s %.2f%%\n", "TD share of bill:", pct))
+		fmt.Fprintf(&b, "  %-22s %.2f%%\n", "TD share of bill:", pct)
 	}
 	b.WriteString(dash + "\n")
 	return b.String()

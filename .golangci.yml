@@ -1,0 +1,33 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  # The standard set: govet, ineffassign, staticcheck, unused (and errcheck,
+  # which we disable below).
+  default: standard
+  disable:
+    # errcheck is high-noise on this codebase (~30 findings, almost all
+    # best-effort Save/Close/Write calls that are intentionally ignored).
+    # Left off for now so the linter stays green and high-signal; revisit as
+    # a focused pass if we want to annotate those with explicit `_ =`.
+    - errcheck
+  settings:
+    staticcheck:
+      checks:
+        - all
+        # QF = "quickfix": opinionated refactors (rewrite WriteString(Sprintf)
+        # as Fprintf, apply De Morgan's law…), not correctness issues. The
+        # standalone staticcheck CLI doesn't enable them by default either.
+        - -QF*
+        # ST1000 mandates a package comment on every package — pedantic for an
+        # existing codebase. The high-value style check, ST1005 (error-string
+        # casing), stays on.
+        - -ST1000
+
+issues:
+  # Show every finding (no per-linter / per-issue cap) so CI can't surface a
+  # finding that a capped local run hid.
+  max-same-issues: 0
+  max-issues-per-linter: 0

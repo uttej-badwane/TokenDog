@@ -624,10 +624,10 @@ func IsEnvAssignment(s string) bool {
 		c := name[i]
 		isAlpha := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 		isDigit := c >= '0' && c <= '9'
-		if i == 0 && !(isAlpha || c == '_') {
+		if i == 0 && !isAlpha && c != '_' {
 			return false
 		}
-		if !(isAlpha || isDigit || c == '_') {
+		if !isAlpha && !isDigit && c != '_' {
 			return false
 		}
 	}

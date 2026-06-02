@@ -79,6 +79,8 @@ func Save(p Policy) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
-// Helpers for constructing/serializing policy values.
+// Bool returns a pointer to b, for setting optional Policy fields.
 func Bool(b bool) *bool { return &b }
-func Int(i int) *int    { return &i }
+
+// Int returns a pointer to i, for setting optional Policy fields.
+func Int(i int) *int { return &i }

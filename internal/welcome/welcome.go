@@ -1,3 +1,5 @@
+// Package welcome renders TokenDog's first-run onboarding summary — the
+// post-`td setup` message that explains what was wired up and what to do next.
 package welcome
 
 import (

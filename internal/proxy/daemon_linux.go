@@ -59,7 +59,7 @@ func DaemonInstall() (string, error) {
 	// enable + start (idempotent: --now restarts if already running).
 	if out, err := exec.Command("systemctl", "--user", "enable", "--now", ServiceName).CombinedOutput(); err != nil {
 		return unitPath, fmt.Errorf("systemctl --user enable --now: %w\n%s\n"+
-			"Hint: if running on a headless server, run `loginctl enable-linger $USER` first.", err, out)
+			"hint: on a headless server, run `loginctl enable-linger $USER` first", err, out)
 	}
 
 	return unitPath, nil
