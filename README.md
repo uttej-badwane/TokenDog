@@ -1,23 +1,32 @@
-<!-- TokenDog: token-optimized CLI proxy for AI coding assistants -->
-# TokenDog
+<!-- TokenDog: provider-neutral tool-output compression for AI coding agents -->
+<div align="center">
 
-```
+<pre>
 ████████╗ ██████╗ ██╗  ██╗███████╗███╗   ██╗██████╗  ██████╗  ██████╗
 ╚══██╔══╝██╔═══██╗██║ ██╔╝██╔════╝████╗  ██║██╔══██╗██╔═══██╗██╔════╝
    ██║   ██║   ██║█████╔╝ █████╗  ██╔██╗ ██║██║  ██║██║   ██║██║  ███╗
    ██║   ██║   ██║██╔═██╗ ██╔══╝  ██║╚██╗██║██║  ██║██║   ██║██║   ██║
    ██║   ╚██████╔╝██║  ██╗███████╗██║ ╚████║██████╔╝╚██████╔╝╚██████╔╝
    ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝  ╚═════╝  ╚═════╝
-```
+</pre>
 
-**A local HTTPS proxy that filters tool output before it reaches your AI assistant's context window.**
+### 🐕 Compress the tool output your AI agent is about to pay for — *losslessly, before it's billed.*
 
+[![CI](https://github.com/uttej-badwane/TokenDog/actions/workflows/test.yml/badge.svg)](https://github.com/uttej-badwane/TokenDog/actions/workflows/test.yml)
 [![Release](https://img.shields.io/github/v/release/uttej-badwane/TokenDog)](https://github.com/uttej-badwane/TokenDog/releases)
+[![Go](https://img.shields.io/badge/go-1.22-00ADD8?logo=go&logoColor=white)](go.mod)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-TokenDog runs as a local HTTPS proxy between your AI assistant (Claude Code, Cursor, Cline, anything respecting `HTTPS_PROXY`) and `api.anthropic.com`. It intercepts every request the assistant sends, finds the `tool_result` content blocks the model is about to be charged for, and applies tool-specific compression — losslessly, before any tokens are billed.
+<em>Anthropic · OpenAI · Bedrock &nbsp;·&nbsp; cache-safe by construction &nbsp;·&nbsp; single Go binary &nbsp;·&nbsp; nothing leaves your machine</em>
 
-```
+</div>
+
+---
+
+Coding agents burn tokens on output they barely read — verbose `git status`, `kubectl describe`, `terraform plan`, refresh spam, the same file read twice, 12&nbsp;KB of JSON. **TokenDog** sits between your agent and the model, finds the `tool_result` blocks in each request, and shrinks them **before the tokens are billed** — keeping every answer-bearing fact and proving it does.
+
+```console
 $ td gain --since 1d
 TokenDog Savings (last 24h)
 ══════════════════════════════════════════════════════════
@@ -26,15 +35,37 @@ Saved:              48.2KB (12,403 tokens, 18.7%)
 Cost saved:         $0.19 (per-model rates, cl100k)
 ```
 
-## Install
+## ✨ Highlights
+
+|   |   |
+|---|---|
+| 🪶 **~25 lossless filters** | `git` · `kubectl` · `terraform` · `gh` · `jq` · `npm` · test runners… structural noise stripped, signal kept **verbatim** |
+| ♻️ **Reversible compression** | stash huge outputs, send a preview, let the model pull the original back on demand via MCP — nothing is *lost*, only *deferred* |
+| 🔁 **Cross-message dedup** | re-read the same file? the duplicate collapses to a one-line back-reference (it's verbatim above already) |
+| 🌐 **Multi-provider** | one engine, swappable adapters for **Anthropic / OpenAI / Bedrock** |
+| 🔌 **Two ways in** | the MITM proxy (zero client config) **or** `td gateway` — explicit `base_url`, **no CA cert** (security-team friendly) |
+| 🧪 **Proven quality** | `td eval` shows *deterministically* that no answer-bearing fact is ever dropped — numbers, not vibes |
+| 📊 **Honest measurement** | `td gain` prices real per-model/per-provider savings; `td replay` runs the counterfactual on **your** history |
+| 🏢 **Fleet-ready** | opt-in aggregate reporting (no content leaves the box) + centrally-managed policy for platform teams |
+
+## ⚡ Quick start
 
 ```bash
 brew tap uttej-badwane/tokendog
 brew install tokendog
-td setup
+td setup            # cert + auto-start + proxy env, all wired for you
 ```
 
-That's it. `td setup` handles every step:
+Restart your AI client, then watch the savings roll in with `td gain`. Prefer **no CA cert**? Skip the MITM entirely:
+
+```bash
+td gateway --port 8099 --upstream https://api.anthropic.com
+ANTHROPIC_BASE_URL=http://127.0.0.1:8099 claude
+```
+
+## 📦 Install
+
+The [Quick start](#-quick-start) above is the whole install — `td setup` is the one command that wires everything. Here's exactly what it does for you:
 
 1. Generates and trusts a local CA cert (TouchID prompt on macOS)
 2. Installs a launchd LaunchAgent so the proxy auto-starts at login
@@ -65,7 +96,7 @@ docker pull ghcr.io/uttej-badwane/tokendog:latest
 
 Linux/Windows: `td setup` works for everything except cert install + launchd, which are macOS-only today (the command prints platform-specific manual steps for those).
 
-## How it works
+## 🔧 How it works
 
 ```
 Claude Code (or any AI client respecting HTTPS_PROXY)
@@ -88,7 +119,7 @@ The proxy MITMs **only** `api.anthropic.com:443` — every other host's CONNECT 
 
 Cache safety: only the **last** `tool_result` in the request is filtered. Anthropic's prompt cache hashes content; modifying historical content would invalidate the cache and net cost would go *up*. The last message contains content not yet seen by the API, so filtering it is a pure win. **Cache-safe by construction** — TokenDog is complementary to prompt caching and batch, not a competitor to them.
 
-## Why compress at all (it's not just the bill)
+## 💡 Why compress at all (it's not just the bill)
 
 The headline isn't "save 10% on tokens" — token prices keep falling. The durable wins are about **how much of the context window you spend on signal vs noise**:
 
@@ -99,7 +130,7 @@ The headline isn't "save 10% on tokens" — token prices keep falling. The durab
 
 Dedup and reversible compression exist to serve the first three. The byte savings are the easy thing to measure; the freed context budget is the thing that matters.
 
-## Architecture: engine + adapters + frontends
+## 🏗️ Architecture: engine + adapters + frontends
 
 TokenDog is a **provider-neutral compression engine** with swappable frontends — not a single MITM utility.
 
@@ -130,7 +161,7 @@ td gateway --upstream https://bedrock-runtime.us-east-1.amazonaws.com   # Bedroc
 
 (A native in-process LiteLLM callback would be a Python package and is out of scope here — the gateway gives the same result without leaving Go or touching the LiteLLM process.)
 
-## Deployment modes
+## 🚀 Deployment modes
 
 | Mode | How traffic reaches TD | CA cert? | Best for |
 |---|---|---|---|
@@ -145,7 +176,7 @@ ANTHROPIC_BASE_URL=http://127.0.0.1:8099 claude
 # or OpenAI: client = OpenAI(base_url="http://127.0.0.1:8099/v1")
 ```
 
-## What gets filtered
+## 🪶 What gets filtered
 
 | Tool | Strategy | Real-world reduction |
 |---|---|---|
@@ -167,7 +198,7 @@ ANTHROPIC_BASE_URL=http://127.0.0.1:8099 claude
 
 **Lossless principle**: TokenDog never silently drops content. It restructures and removes structural noise. If filtering would lose data, the original passes through unchanged. Every filter has the universal `Guard` invariant: output bytes ≤ input bytes.
 
-## Reversible compression (opt-in)
+## ♻️ Reversible compression (opt-in)
 
 The lossless filters above are capped at structural cleanup — they can only remove noise, never elide signal, because the model can't get elided bytes back. Reversible compression lifts that ceiling for the long tail of large outputs (especially commands with no per-tool filter, like big log dumps).
 
@@ -212,7 +243,7 @@ cat                    30          2      7%
 
 A high rate is a signal to raise `TD_STASH_MIN` (so that command's output isn't stashed) or treat it as a poor stash candidate. A zero rate means previews are serving cleanly — reversible compression is a pure win for that command. `--json` and `--top N` supported.
 
-## Cross-message dedup
+## 🔁 Cross-message dedup
 
 The per-tool filters above shrink each output in isolation. Dedup attacks a different axis: **redundancy across the conversation**. Agents routinely re-emit identical output — re-reading the same file to re-check it, re-running a verbose status command, pasting the same config twice — and each repeat re-bills the full text even though a byte-identical copy already sits earlier in the prompt.
 
@@ -259,7 +290,7 @@ td eval --corpus ./fixtures # your own *.json fixtures
 td eval --json              # machine-readable
 ```
 
-## Fleet observability & managed policy (platform teams)
+## 🏢 Fleet observability & managed policy (platform teams)
 
 The same engine that runs on one laptop can be governed and measured across an org.
 
@@ -283,14 +314,14 @@ td fleet policy                                              # show effective co
 
 Precedence is **explicit env var > managed policy > built-in default** — policy sets the baseline, but a developer who sets `TD_NO_DEDUP` / `TD_REVERSIBLE` / `TD_STASH_MIN` locally always wins. So central governance never traps anyone.
 
-## Honest savings expectations
+## 📊 Honest savings expectations
 
 - Tool output (the part TD touches) is typically **30-50% of your Anthropic bill**.
 - Per-tool reduction is 30-90% on the bytes TD compresses.
 - Net bill reduction in proxy mode for a typical user: **5-15%** depending on how tool-output-heavy the workflow is.
 - Run `td replay` against your own transcripts to get your specific number for your actual workflow.
 
-## Three commands worth knowing
+## 🛠️ Three commands worth knowing
 
 ### `td gain` — your savings, accurately priced
 
@@ -325,13 +356,13 @@ td proxy start               # run in foreground (Ctrl-C to stop)
 
 Most users only run these via `td setup` — they're here for when something breaks or you want to inspect state.
 
-## Privacy
+## 🔒 Privacy
 
 The proxy sees every byte of every Anthropic API request — including conversation content, tool outputs, and any pasted secrets. Nothing leaves your machine; analytics writes to `~/.config/tokendog/` only. See [SECURITY.md](SECURITY.md) for the full data flow and threat model.
 
 The `redact` package scrubs AWS keys, GitHub tokens, Slack tokens, JWTs, and PEM blocks from `td purge --redact` and `td replay --redact` output. The proxy itself does not redact in-flight content (the model needs the originals to do its job).
 
-## MCP integration (Claude Desktop)
+## 🔌 MCP integration (Claude Desktop)
 
 ```bash
 td mcp install     # adds tokendog to claude_desktop_config.json
@@ -340,7 +371,7 @@ td mcp doctor      # diagnoses Claude Desktop wiring
 
 Exposes 6 tools to Claude Desktop: five read-only analytics queries (so you can ask "how much has TokenDog saved me this week?" in chat) plus `td_retrieve`, which serves originals stashed by [reversible compression](#reversible-compression-opt-in).
 
-## Architecture
+## 📂 Repository layout
 
 ```
 .
@@ -370,12 +401,16 @@ Exposes 6 tools to Claude Desktop: five read-only analytics queries (so you can 
 
 The engine (`internal/core`) is provider- and transport-agnostic. Adding a **provider** is one adapter implementing `core.Provider`; adding a **filter** is one file + one line in `internal/filter/registrations.go`; adding a **frontend** (gateway, SDK middleware) is wiring a transport to `core.Dispatch`. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Status
+## 🟢 Status
 
-Active. Recent changes in [CHANGELOG.md](CHANGELOG.md).
+Active — recent changes in [CHANGELOG.md](CHANGELOG.md).
 
-Looking for help with: more filters (`cat`, `helm`, `psql`, `dig` would all be useful), Linux launchd-equivalent (systemd user units), Windows scheduled-task auto-install. See [CONTRIBUTING.md](CONTRIBUTING.md).
+**Good first contributions:** new per-tool filters (`dig`, `systemctl`, `tree`…), a Linux `systemd` user-unit equivalent of the launchd auto-start, Windows scheduled-task install, or a new provider adapter (Gemini). Each is a small, self-contained change — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## License
+## 📄 License
 
-MIT
+MIT © TokenDog contributors
+
+<div align="center">
+<sub>Built for people who'd rather spend their context window on signal than on <code>git status</code>.</sub>
+</div>
