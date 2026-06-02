@@ -363,7 +363,7 @@ Exposes 6 tools to Claude Desktop: five read-only analytics queries (so you can 
 │   ├── redact/                secret-scrubbing regex pack
 │   ├── replay/                transcript walker + counterfactual savings
 │   ├── stash/                 reversible-compression store (originals + preview)
-│   ├── tokenizer/             cl100k via tiktoken-go (Anthropic proxy ~10%)
+│   ├── tokenizer/             per-provider encodings (cl100k / o200k) via tiktoken-go
 │   └── transcript/            Claude session JSONL parser
 └── scripts/install.sh         brew-less installer
 ```

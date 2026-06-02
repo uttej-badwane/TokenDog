@@ -81,12 +81,12 @@ func runGateway(_ *cobra.Command, _ []string) error {
 			body, err := io.ReadAll(r.Body)
 			r.Body.Close()
 			if err == nil {
-				out, savings, derr := core.Dispatch(r.URL.Path, body, core.OptionsFromEnv())
+				out, savings, provider, derr := core.Dispatch(r.URL.Path, body, core.OptionsFromEnv())
 				if derr != nil {
 					out = body // never forward something we couldn't trust
 				}
 				for _, s := range savings {
-					recordGatewaySaving(s)
+					recordGatewaySaving(s, provider)
 				}
 				r.Body = io.NopCloser(bytes.NewReader(out))
 				r.ContentLength = int64(len(out))
@@ -103,8 +103,9 @@ func runGateway(_ *cobra.Command, _ []string) error {
 }
 
 // recordGatewaySaving mirrors the proxy's analytics write, tagged "gateway:"
-// so `td gain` can distinguish the deployment source.
-func recordGatewaySaving(s core.Saving) {
-	rec := analytics.NewRecord("gateway: "+s.Label, s.Original, s.Result, 0)
+// so `td gain` can distinguish the deployment source. provider selects the
+// tokenizer encoding so non-Anthropic token counts are accurate.
+func recordGatewaySaving(s core.Saving, provider string) {
+	rec := analytics.NewRecordForProvider("gateway: "+s.Label, s.Original, s.Result, 0, provider)
 	_ = analytics.Save(rec)
 }

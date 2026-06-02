@@ -42,6 +42,11 @@ type Record struct {
 	// resolves cwd to the deepest .git-rooted directory above it, so
 	// runs from any subdir of a repo land in the same bucket.
 	CWD string `json:"cwd,omitempty"`
+	// Provider is the LLM provider this record came from (anthropic, openai,
+	// bedrock, …), set by gateway/proxy frontends. It selects the tokenizer
+	// encoding at write time so RawTokens/FilteredTokens are accurate per
+	// provider, and enables a per-provider breakdown. Empty = Anthropic proxy.
+	Provider string `json:"provider,omitempty"`
 }
 
 // Project resolves r.CWD to a project name. Walks up from CWD looking for
@@ -96,14 +101,23 @@ func EstimateTokens(bytes int) int { return (bytes + 3) / 4 }
 // the hook injects these so each `td <tool>` exec inherits Claude's session
 // context.
 func NewRecord(command string, raw, filtered string, durationMs int64) Record {
+	return NewRecordForProvider(command, raw, filtered, durationMs, "")
+}
+
+// NewRecordForProvider is NewRecord with an explicit provider, so token counts
+// use the right encoding (e.g. o200k for OpenAI) instead of the cl100k
+// Anthropic proxy. An empty provider behaves exactly like the legacy NewRecord.
+func NewRecordForProvider(command, raw, filtered string, durationMs int64, provider string) Record {
+	enc := tokenizer.EncodingFor(provider)
 	r := Record{
 		Command:        command,
 		Timestamp:      time.Now(),
 		RawBytes:       len(raw),
 		FilteredBytes:  len(filtered),
-		RawTokens:      tokenizer.Count(raw),
-		FilteredTokens: tokenizer.Count(filtered),
+		RawTokens:      tokenizer.CountWith(enc, raw),
+		FilteredTokens: tokenizer.CountWith(enc, filtered),
 		DurationMs:     durationMs,
+		Provider:       provider,
 	}
 	addSessionEnv(&r)
 	if cwd, err := os.Getwd(); err == nil {
@@ -683,6 +697,55 @@ func RenderByProject(records []Record) string {
 		}
 		b.WriteString(fmt.Sprintf("  %-32s  %-8d  %-12d  %s\n",
 			name, r.commands, r.tokensSaved, humanBytes(r.bytesSaved)))
+	}
+	b.WriteString(dash + "\n")
+	return b.String()
+}
+
+// RenderByProvider produces a per-provider breakdown (anthropic / openai /
+// bedrock / …). Records predating provider tagging fall into "anthropic
+// (proxy)", since the original proxy only ever saw Anthropic traffic.
+func RenderByProvider(records []Record) string {
+	type bucket struct {
+		provider    string
+		commands    int
+		tokensSaved int
+		bytesSaved  int
+	}
+	byProv := map[string]*bucket{}
+	for _, r := range records {
+		p := r.Provider
+		if p == "" {
+			p = "anthropic (proxy)"
+		}
+		b, ok := byProv[p]
+		if !ok {
+			b = &bucket{provider: p}
+			byProv[p] = b
+		}
+		b.commands++
+		b.tokensSaved += r.TokensSaved()
+		b.bytesSaved += r.BytesSaved()
+	}
+	if len(byProv) == 0 {
+		return ""
+	}
+	rows := make([]*bucket, 0, len(byProv))
+	for _, b := range byProv {
+		rows = append(rows, b)
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].tokensSaved > rows[j].tokensSaved })
+
+	var b strings.Builder
+	dash := strings.Repeat("─", 72)
+	b.WriteString("\nBy Provider\n")
+	b.WriteString(dash + "\n")
+	b.WriteString(fmt.Sprintf("  %-24s  %-8s  %-12s  %s\n",
+		"Provider", "Calls", "Tokens saved", "Bytes saved"))
+	b.WriteString(dash + "\n")
+	for _, r := range rows {
+		b.WriteString(fmt.Sprintf("  %-24s  %-8d  %-12d  %s\n",
+			r.provider, r.commands, r.tokensSaved, humanBytes(r.bytesSaved)))
 	}
 	b.WriteString(dash + "\n")
 	return b.String()

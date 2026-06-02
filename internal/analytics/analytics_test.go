@@ -81,3 +81,23 @@ func TestNormalizeName(t *testing.T) {
 		}
 	}
 }
+
+func TestNewRecordForProviderSetsProviderAndCounts(t *testing.T) {
+	raw := "On branch main\n\tmodified: foo.go\n"
+	filtered := "branch: main\nmodified(1): foo.go\n"
+	r := NewRecordForProvider("proxy: git status", raw, filtered, 0, "openai")
+	if r.Provider != "openai" {
+		t.Errorf("Provider = %q, want openai", r.Provider)
+	}
+	if r.RawBytes != len(raw) || r.FilteredBytes != len(filtered) {
+		t.Error("byte counts wrong")
+	}
+	if r.RawTokens <= 0 || r.FilteredTokens <= 0 {
+		t.Errorf("token counts should be positive: raw=%d filtered=%d", r.RawTokens, r.FilteredTokens)
+	}
+	// NewRecord (no provider) behaves like the legacy path.
+	legacy := NewRecord("proxy: git status", raw, filtered, 0)
+	if legacy.Provider != "" {
+		t.Errorf("legacy NewRecord should leave Provider empty, got %q", legacy.Provider)
+	}
+}

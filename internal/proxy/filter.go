@@ -20,22 +20,23 @@ import (
 // Cache safety and "last message only" semantics are enforced inside the
 // adapters/engine, not here.
 func FilterHandler(req *http.Request, body []byte) ([]byte, error) {
-	out, savings, err := core.Dispatch(req.URL.Path, body, core.OptionsFromEnv())
+	out, savings, provider, err := core.Dispatch(req.URL.Path, body, core.OptionsFromEnv())
 	if err != nil {
 		// Engine trouble — never send a payload we can't trust. Fall back to
 		// the original bytes.
 		return body, nil
 	}
 	for _, s := range savings {
-		recordProxySaving(s.Label, s.Original, s.Result)
+		recordProxySaving(s.Label, s.Original, s.Result, provider)
 	}
 	return out, nil
 }
 
 // recordProxySaving writes a proxy-mode analytics record. Same Record schema
-// used by hook mode so `td gain` aggregates both transparently.
-func recordProxySaving(command, raw, filtered string) {
-	rec := analytics.NewRecord("proxy: "+command, raw, filtered, 0)
+// used by hook mode so `td gain` aggregates both transparently. provider
+// selects the tokenizer encoding for accurate per-provider token counts.
+func recordProxySaving(command, raw, filtered, provider string) {
+	rec := analytics.NewRecordForProvider("proxy: "+command, raw, filtered, 0, provider)
 	if err := analytics.Save(rec); err != nil {
 		fmt.Fprintf(os.Stderr, "[td proxy] analytics save failed: %v\n", err)
 	}

@@ -31,13 +31,16 @@ func Register(p Provider) { providers = append(providers, p) }
 func Providers() []Provider { return providers }
 
 // Dispatch routes a request body to the first provider whose Match accepts
-// the path. When no provider matches, the body is returned unchanged with no
-// savings — the safe default for paths TokenDog doesn't compress.
-func Dispatch(path string, body []byte, opts Options) ([]byte, []Saving, error) {
+// the path. It returns the rewritten body, the savings, the matched provider's
+// name (so the frontend can tokenize/price per provider), and any error. When
+// no provider matches, the body is returned unchanged with an empty provider —
+// the safe default for paths TokenDog doesn't compress.
+func Dispatch(path string, body []byte, opts Options) (out []byte, savings []Saving, provider string, err error) {
 	for _, p := range providers {
 		if p.Match(path) {
-			return p.Compress(body, opts)
+			out, savings, err = p.Compress(body, opts)
+			return out, savings, p.Name(), err
 		}
 	}
-	return body, nil, nil
+	return body, nil, "", nil
 }
