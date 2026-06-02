@@ -1,0 +1,7 @@
+{
+  "name": "httpie-json-generic",
+  "command": "http GET https://api.internal/instances/i-0abc123",
+  "output": "{\n  \"instance_id\": \"i-0abc123\",\n  \"state\": \"running\",\n  \"private_ip\": \"10.0.1.42\",\n  \"tags\": {\n    \"role\": \"web\",\n    \"env\": \"prod\"\n  }\n}",
+  "must_keep": ["i-0abc123", "running", "10.0.1.42", "prod"],
+  "options": {}
+}

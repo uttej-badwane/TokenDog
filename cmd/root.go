@@ -98,4 +98,5 @@ func init() {
 	rootCmd.AddCommand(stashCmd)
 	rootCmd.AddCommand(learnCmd)
 	rootCmd.AddCommand(gatewayCmd)
+	rootCmd.AddCommand(evalCmd)
 }
