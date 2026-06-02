@@ -391,6 +391,21 @@ func (s Summary) SavedPct() float64 {
 	return float64(s.BytesSaved()) / float64(s.TotalRawBytes) * 100
 }
 
+// priceKey resolves the model-pricing bucket for a record. An exact resolved
+// model wins. Otherwise a non-Anthropic provider prices at that provider's
+// default model (imputed); a record with neither model nor provider falls into
+// the legacy "unknown" bucket (priced at DefaultModel). Returns the bucket key
+// and whether the model was imputed.
+func priceKey(r Record) (string, bool) {
+	if r.Model != "" {
+		return r.Model, false
+	}
+	if r.Provider != "" && r.Provider != "anthropic" {
+		return pricing.ProviderDefault(r.Provider), true
+	}
+	return "unknown", true
+}
+
 type CommandStat struct {
 	Name        string
 	Count       int
@@ -421,20 +436,17 @@ func Summarize(records []Record) (Summary, []CommandStat) {
 			s.CacheHits++
 		}
 
-		// Per-model bucket. Empty model goes into "unknown" so the row
-		// shows up in --by-model as a distinct category rather than
-		// silently merging into the default-priced bucket.
-		modelKey := r.Model
-		if modelKey == "" {
-			modelKey = "unknown"
-		}
+		// Per-model bucket. A non-Anthropic provider with no exact model
+		// prices at that provider's default (imputed); records with neither
+		// model nor provider fall into the legacy "unknown" bucket.
+		modelKey, imputed := priceKey(r)
 		ms, ok := s.ByModel[modelKey]
 		if !ok {
-			rate, hit := pricing.Lookup(modelKey)
-			ms = &ModelStat{Model: rate.Model, IsImputed: !hit}
 			if modelKey == "unknown" {
-				ms.Model = "unknown"
-				ms.IsImputed = true
+				ms = &ModelStat{Model: "unknown", IsImputed: true}
+			} else {
+				rate, _ := pricing.Lookup(modelKey)
+				ms = &ModelStat{Model: rate.Model, IsImputed: imputed}
 			}
 			s.ByModel[modelKey] = ms
 		}
@@ -711,6 +723,7 @@ func RenderByProvider(records []Record) string {
 		commands    int
 		tokensSaved int
 		bytesSaved  int
+		usdSaved    float64
 	}
 	byProv := map[string]*bucket{}
 	for _, r := range records {
@@ -723,9 +736,18 @@ func RenderByProvider(records []Record) string {
 			b = &bucket{provider: p}
 			byProv[p] = b
 		}
+		ts := r.TokensSaved()
 		b.commands++
-		b.tokensSaved += r.TokensSaved()
+		b.tokensSaved += ts
 		b.bytesSaved += r.BytesSaved()
+		// Price each record with the provider-aware rate so the dollar column
+		// reflects gpt-4o / Bedrock / Claude rates rather than one blended rate.
+		key, _ := priceKey(r)
+		if key == "unknown" {
+			key = pricing.DefaultModel
+		}
+		rate, _ := pricing.Lookup(key)
+		b.usdSaved += rate.USDForInput(ts)
 	}
 	if len(byProv) == 0 {
 		return ""
@@ -734,20 +756,22 @@ func RenderByProvider(records []Record) string {
 	for _, b := range byProv {
 		rows = append(rows, b)
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].tokensSaved > rows[j].tokensSaved })
+	sort.Slice(rows, func(i, j int) bool { return rows[i].usdSaved > rows[j].usdSaved })
 
 	var b strings.Builder
 	dash := strings.Repeat("─", 72)
 	b.WriteString("\nBy Provider\n")
 	b.WriteString(dash + "\n")
-	b.WriteString(fmt.Sprintf("  %-24s  %-8s  %-12s  %s\n",
-		"Provider", "Calls", "Tokens saved", "Bytes saved"))
+	b.WriteString(fmt.Sprintf("  %-22s  %-8s  %-12s  %-12s  %s\n",
+		"Provider", "Calls", "Tokens saved", "USD saved", "Bytes saved"))
 	b.WriteString(dash + "\n")
 	for _, r := range rows {
-		b.WriteString(fmt.Sprintf("  %-24s  %-8d  %-12d  %s\n",
-			r.provider, r.commands, r.tokensSaved, humanBytes(r.bytesSaved)))
+		b.WriteString(fmt.Sprintf("  %-22s  %-8d  %-12d  $%-11.4f  %s\n",
+			r.provider, r.commands, r.tokensSaved, r.usdSaved, humanBytes(r.bytesSaved)))
 	}
 	b.WriteString(dash + "\n")
+	b.WriteString("  USD uses provider-aware rates; non-Anthropic records priced at the\n")
+	b.WriteString("  provider's default model when the exact model isn't captured.\n")
 	return b.String()
 }
 
@@ -820,10 +844,7 @@ func TimeSeriesData(records []Record, monthly, byModel bool) []TimeBucket {
 		b.Commands++
 		b.TokensSaved += ts
 		b.BytesSaved += r.BytesSaved()
-		modelKey := r.Model
-		if modelKey == "" {
-			modelKey = "unknown"
-		}
+		modelKey, _ := priceKey(r)
 		// Pricing per record; sums correctly when sessions mix models.
 		priceModel := modelKey
 		if priceModel == "unknown" {
