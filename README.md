@@ -215,6 +215,37 @@ This is **lossless** (the full copy is verbatim above, in the model's own contex
 
 On by default; set `TD_NO_DEDUP=1` to disable. Tiny duplicates where the marker would cost more than the content are left untouched by the `Guard` invariant.
 
+## Proving it doesn't hurt quality — `td eval`
+
+"Lossless" and "recoverable" are claims; `td eval` makes them measurable. Each corpus fixture declares the answer-bearing facts a task would actually need from a tool's output (`must_keep`). The harness compresses each fixture through the **real engine** and checks every fact survives — no live model required, fully deterministic, runs in CI.
+
+```
+$ td eval
+TokenDog Eval — 4 fixtures
+══════════════════════════════════════════════════════════════════════
+FIXTURE                    TRANSFORM    COMP%   INLINE   RECOVER
+big-log-reversible         reversible     81%     2/3      3/3  ← 1 need retrieval
+duplicate-config-read      dedup          77%     3/3      3/3
+git-status-lossless        lossless       26%     3/3      3/3
+httpie-json-generic        lossless       77%     4/4      4/4
+──────────────────────────────────────────────────────────────────────
+Aggregate: 3.2KB → 2.4KB (74% of original) · facts 13/13 recoverable (100%), 12/13 inline (92%)
+RESULT: PASS — no answer-bearing fact lost
+```
+
+Two measures, because they mean different things:
+
+- **inline** — the fact is in the prompt the model receives, no retrieval needed.
+- **recoverable** — the fact is reachable *at all*: inline, or via the reversible stash (a `td_retrieve` call), or verbatim earlier in the conversation (a dedup back-reference).
+
+The harness **passes only if every fact is recoverable**. That's the hard line: compression may *defer* a fact to a retrieval (the reversible row above defers one — the OOM error buried mid-log), but it must never *destroy* one. The inline rate is reported as an efficiency signal, not a correctness gate. `td eval` exits non-zero on any lost fact, so it works as a CI gate and as a regression test that a filter never silently drops an answer.
+
+```bash
+td eval                     # built-in corpus
+td eval --corpus ./fixtures # your own *.json fixtures
+td eval --json              # machine-readable
+```
+
 ## Honest savings expectations
 
 - Tool output (the part TD touches) is typically **30-50% of your Anthropic bill**.
@@ -284,6 +315,7 @@ Exposes 6 tools to Claude Desktop: five read-only analytics queries (so you can 
 │   │   └── openai/            Chat Completions wire ↔ Conversation
 │   ├── analytics/             history.jsonl + per-model aggregation
 │   ├── cache/                 30s output cache for repeated commands (hook mode)
+│   ├── eval/                  offline quality harness + embedded corpus
 │   ├── filter/                ~25 per-tool compactors + universal Guard
 │   ├── hook/                  PreToolUse rewrite logic + bash chain parsing
 │   ├── mcpconfig/             Claude Desktop config management

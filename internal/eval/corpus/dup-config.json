@@ -1,0 +1,8 @@
+{
+  "name": "duplicate-config-read",
+  "command": "cat config/production.yaml",
+  "prior": "server:\n  host: 0.0.0.0\n  port: 8080\ndatabase:\n  url: postgres://db.prod.internal:5432/app\n  pool_size: 20\n  ssl_mode: require\nredis:\n  url: redis://cache.prod.internal:6379\nfeature_flags:\n  new_checkout: true\n  legacy_api: false\n",
+  "output": "server:\n  host: 0.0.0.0\n  port: 8080\ndatabase:\n  url: postgres://db.prod.internal:5432/app\n  pool_size: 20\n  ssl_mode: require\nredis:\n  url: redis://cache.prod.internal:6379\nfeature_flags:\n  new_checkout: true\n  legacy_api: false\n",
+  "must_keep": ["db.prod.internal:5432", "cache.prod.internal:6379", "new_checkout: true"],
+  "options": { "dedup": true }
+}
