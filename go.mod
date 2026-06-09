@@ -3,7 +3,7 @@ module tokendog
 go 1.23.0
 
 require (
-	github.com/elazarl/goproxy v1.8.3
+	github.com/elazarl/goproxy v1.8.4
 	github.com/pkoukk/tiktoken-go v0.1.8
 	github.com/spf13/cobra v1.10.2
 )
