@@ -34,6 +34,18 @@ type SessionTotals struct {
 	ModelCounts         map[string]int // per-model API call count (for sessions that switch)
 }
 
+// Entry is a single deduped usage row from a transcript, with its timestamp
+// and model preserved. Read collapses these into per-session totals; spend
+// reporting needs them ungrouped so it can bucket cost by calendar day.
+type Entry struct {
+	Timestamp     time.Time
+	Model         string
+	Input         int // usage.input_tokens (uncached new input)
+	Output        int // usage.output_tokens
+	CacheCreation int // usage.cache_creation_input_tokens
+	CacheRead     int // usage.cache_read_input_tokens
+}
+
 // line mirrors the shape ccstatusline parses with Zod. Fields we don't read
 // (parentUuid, requestId, etc.) are ignored by encoding/json.
 type line struct {
@@ -54,10 +66,12 @@ type line struct {
 	} `json:"message"`
 }
 
-// Read parses one transcript file and returns the aggregate session totals.
-// On parse errors per-line, the line is skipped (transcripts can contain
-// permission-mode and other control rows that don't have `message`).
-func Read(path string) (*SessionTotals, error) {
+// readCounted parses one transcript file and applies the streaming-aware
+// dedup rule, returning the rows that should be counted. Shared by Read and
+// Entries so the dedup logic lives in exactly one place. On per-line parse
+// errors the line is skipped (transcripts can contain permission-mode and
+// other control rows that don't have `message`).
+func readCounted(path string) ([]line, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -89,17 +103,53 @@ func Read(path string) (*SessionTotals, error) {
 	// Streaming-aware dedup: keep finalized entries (stop_reason != null) +
 	// the single most recent unfinished entry. Older transcripts without
 	// stop_reason keep every row.
+	if !hasStopReason {
+		return entries, nil
+	}
 	counted := make([]line, 0, len(entries))
-	if hasStopReason {
-		for i, e := range entries {
-			if e.Message.StopReason != nil && *e.Message.StopReason != "" {
-				counted = append(counted, e)
-			} else if e.Message.StopReason == nil && i == len(entries)-1 {
-				counted = append(counted, e)
+	for i, e := range entries {
+		if e.Message.StopReason != nil && *e.Message.StopReason != "" {
+			counted = append(counted, e)
+		} else if e.Message.StopReason == nil && i == len(entries)-1 {
+			counted = append(counted, e)
+		}
+	}
+	return counted, nil
+}
+
+// Entries returns the deduped usage rows from a transcript, each tagged with
+// its timestamp and model. Rows with an unparseable timestamp keep a zero
+// time (they still count toward lifetime totals, just not toward a day).
+func Entries(path string) ([]Entry, error) {
+	counted, err := readCounted(path)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Entry, 0, len(counted))
+	for _, e := range counted {
+		u := e.Message.Usage
+		entry := Entry{
+			Model:         e.Message.Model,
+			Input:         u.InputTokens,
+			Output:        u.OutputTokens,
+			CacheCreation: u.CacheCreationInputTokens,
+			CacheRead:     u.CacheReadInputTokens,
+		}
+		if e.Timestamp != "" {
+			if ts, err := time.Parse(time.RFC3339Nano, e.Timestamp); err == nil {
+				entry.Timestamp = ts
 			}
 		}
-	} else {
-		counted = entries
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
+// Read parses one transcript file and returns the aggregate session totals.
+func Read(path string) (*SessionTotals, error) {
+	counted, err := readCounted(path)
+	if err != nil {
+		return nil, err
 	}
 
 	t := &SessionTotals{Path: path, ModelCounts: map[string]int{}}

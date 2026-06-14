@@ -61,6 +61,7 @@ func init() {
 	rootCmd.AddCommand(curlCmd)
 	rootCmd.AddCommand(kubectlCmd)
 	rootCmd.AddCommand(gainCmd)
+	rootCmd.AddCommand(spendCmd)
 	rootCmd.AddCommand(rewriteCmd)
 	rootCmd.AddCommand(discoverCmd)
 	rootCmd.AddCommand(replayCmd)
