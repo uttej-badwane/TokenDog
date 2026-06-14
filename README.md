@@ -1,22 +1,16 @@
 <!-- TokenDog: provider-neutral tool-output compression for AI coding agents -->
 <div align="center">
 
-<pre>
-████████╗ ██████╗ ██╗  ██╗███████╗███╗   ██╗██████╗  ██████╗  ██████╗
-╚══██╔══╝██╔═══██╗██║ ██╔╝██╔════╝████╗  ██║██╔══██╗██╔═══██╗██╔════╝
-   ██║   ██║   ██║█████╔╝ █████╗  ██╔██╗ ██║██║  ██║██║   ██║██║  ███╗
-   ██║   ██║   ██║██╔═██╗ ██╔══╝  ██║╚██╗██║██║  ██║██║   ██║██║   ██║
-   ██║   ╚██████╔╝██║  ██╗███████╗██║ ╚████║██████╔╝╚██████╔╝╚██████╔╝
-   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝  ╚═════╝  ╚═════╝
-</pre>
+<img src="docs/assets/banner.png" alt="TokenDog — compress the tool output your AI agent is about to pay for" width="460">
 
-### 🐶 Compress the tool output your AI agent is about to pay for — *losslessly, before it's billed.*
+### Compress the tool output your AI agent is about to pay for — *losslessly, before it's billed.*
 
 [![CI](https://github.com/uttej-badwane/TokenDog/actions/workflows/test.yml/badge.svg)](https://github.com/uttej-badwane/TokenDog/actions/workflows/test.yml)
 [![Release](https://img.shields.io/github/v/release/uttej-badwane/TokenDog)](https://github.com/uttej-badwane/TokenDog/releases)
 [![Go](https://img.shields.io/github/go-mod/go-version/uttej-badwane/TokenDog?logo=go&logoColor=white&color=00ADD8&label=go)](go.mod)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Website](https://img.shields.io/badge/website-tokendog-F5A623?labelColor=2b2b2b)](https://uttej-badwane.github.io/TokenDog/)
 
 **Compresses for**
 &nbsp;

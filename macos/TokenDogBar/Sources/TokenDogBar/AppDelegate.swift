@@ -17,7 +17,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "🐶 …"
+        if let button = statusItem.button {
+            button.image = Self.barIcon()
+            button.imagePosition = .imageLeft
+            button.imageHugsTitle = true
+            button.title = " …"
+        }
         menu.delegate = self
         statusItem.menu = menu
 
@@ -27,6 +32,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
             self?.refresh()
         }
+    }
+
+    /// Loads the bundled TokenDog mark, sized for the status bar. Rendered in
+    /// full colour (not a template image) — the coin is the brand and reads
+    /// well at this size, where a flat monochrome silhouette would not.
+    private static func barIcon() -> NSImage? {
+        guard let path = Bundle.main.path(forResource: "MenuBarIcon", ofType: "png"),
+              let img = NSImage(contentsOfFile: path) else { return nil }
+        img.size = NSSize(width: 18, height: 18)
+        img.isTemplate = false
+        return img
     }
 
     // MARK: - Data
@@ -61,16 +77,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// savings when no Claude logs exist, and to a plain marker when td is gone.
     private func titleText() -> String {
         if lastReport == nil && lastError != nil {
-            return "🐶 td?"
+            return " td?"
         }
-        guard let r = lastReport else { return "🐶 …" }
+        guard let r = lastReport else { return " …" }
         if r.spend.available {
-            return "🐶 \(Money.short(r.spend.today)) today"
+            return " \(Money.short(r.spend.today)) today"
         }
         if r.saved.lifetime > 0 {
-            return "🐶 \(Money.short(r.saved.lifetime)) saved"
+            return " \(Money.short(r.saved.lifetime)) saved"
         }
-        return "🐶 td"
+        return " td"
     }
 
     // MARK: - Menu
