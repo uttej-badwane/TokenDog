@@ -63,11 +63,12 @@ func logDir() (string, error) {
 	return filepath.Join(home, ".claude", "projects"), nil
 }
 
-// priceEntry returns the USD cost of one usage row. Unknown models resolve to
-// pricing.DefaultModel (Lookup never returns a nil rate), so a missing model
+// priceEntry returns the USD cost of one usage row, priced at the rate that was
+// in effect at the row's timestamp. Unknown models resolve to
+// pricing.DefaultModel (LookupAt never returns a nil rate), so a missing model
 // is priced conservatively rather than dropped.
 func priceEntry(e transcript.Entry) float64 {
-	r, _ := pricing.Lookup(e.Model)
+	r, _ := pricing.LookupAt(e.Model, e.Timestamp)
 	const m = 1_000_000.0
 	return float64(e.Input)/m*r.InputPerM +
 		float64(e.Output)/m*r.OutputPerM +
@@ -96,6 +97,12 @@ func computeSpend(now time.Time) (SpendBlock, error) {
 	dayStart := startOfDay(now)
 	monthStart := startOfMonth(now)
 
+	// Parsed rows are served from a disk cache keyed by each file's size+modtime,
+	// so repeated invocations (the menu bar polls on a timer) re-parse only the
+	// transcripts that actually changed instead of the whole tree.
+	reader := loadCache()
+	seen := make(map[string]struct{})
+
 	walkErr := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil // skip unreadable subtrees rather than abort the whole scan
@@ -103,7 +110,8 @@ func computeSpend(now time.Time) (SpendBlock, error) {
 		if d.IsDir() || filepath.Ext(path) != ".jsonl" {
 			return nil
 		}
-		entries, err := transcript.Entries(path)
+		seen[path] = struct{}{}
+		entries, err := reader.entries(path, d)
 		if err != nil {
 			return nil // one bad transcript shouldn't sink the total
 		}
@@ -123,6 +131,9 @@ func computeSpend(now time.Time) (SpendBlock, error) {
 		}
 		return nil
 	})
+
+	reader.prune(seen)
+	reader.save()
 	return block, walkErr
 }
 

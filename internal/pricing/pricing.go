@@ -17,6 +17,7 @@ package pricing
 import (
 	"sort"
 	"strings"
+	"time"
 )
 
 // DataVersion ticks on each pricing update. Useful for cache invalidation
@@ -145,6 +146,25 @@ var rates = map[string]Rate{
 	},
 }
 
+// datedRate is a rate snapshot tagged with the date it took effect. Models
+// accumulate these only when a published price changes; see priceHistory.
+type datedRate struct {
+	From time.Time
+	Rate Rate
+}
+
+// priceHistory holds superseded rate snapshots per canonical model id, oldest
+// first. It is empty until a provider changes a price: at that point the prior
+// rate is recorded here and currentFrom[model] is set to the changeover date,
+// so spend in an earlier period stays priced at the rate that was in effect
+// then instead of being silently re-priced at the current rate.
+var priceHistory = map[string][]datedRate{}
+
+// currentFrom records when each model's CURRENT rate (the entry in `rates`)
+// took effect. A model absent from this map has only ever had one rate, which
+// therefore applies to every timestamp.
+var currentFrom = map[string]time.Time{}
+
 // providerDefaults maps a provider id (as core.Provider.Name reports) to the
 // model TokenDog prices its records at when the exact model isn't captured —
 // the dominant agentic model for each provider. An empty/anthropic provider
@@ -184,17 +204,15 @@ func LookupFor(provider, model string) (Rate, bool) {
 // conservative-low rather than speculatively high.
 const DefaultModel = "claude-opus-4-7"
 
-// Lookup returns the Rate for a model id. Matches by exact id first, then
-// falls back to a prefix match (so versioned ids like "claude-opus-4-7-20260418"
-// still resolve). Returns the DefaultModel rate + ok=false on miss so
-// callers can mark the result as imputed in user-facing output.
-func Lookup(model string) (Rate, bool) {
-	if r, ok := rates[model]; ok {
-		return r, true
+// resolveKey maps a model id to a canonical key in the rate table. Matches by
+// exact id first, then by LONGEST prefix (so versioned ids like
+// "claude-opus-4-7-20260418" or "gpt-4o-2024-08-06" resolve, and a
+// "gpt-4o-mini-…" id doesn't collide with "gpt-4o"). Returns DefaultModel +
+// false on miss so callers can mark the result as imputed.
+func resolveKey(model string) (string, bool) {
+	if _, ok := rates[model]; ok {
+		return model, true
 	}
-	// Prefix match for version-suffixed ids like "claude-opus-4-7-20260418",
-	// "anthropic/claude-haiku-4-5", or "gpt-4o-2024-08-06". Try the LONGEST
-	// matching prefix first so "gpt-4o-mini-…" doesn't collide with "gpt-4o".
 	clean := strings.TrimPrefix(model, "anthropic/")
 	prefixes := make([]string, 0, len(rates))
 	for p := range rates {
@@ -203,10 +221,44 @@ func Lookup(model string) (Rate, bool) {
 	sort.Slice(prefixes, func(i, j int) bool { return len(prefixes[i]) > len(prefixes[j]) })
 	for _, prefix := range prefixes {
 		if strings.HasPrefix(clean, prefix) {
-			return rates[prefix], true
+			return prefix, true
 		}
 	}
-	return rates[DefaultModel], false
+	return DefaultModel, false
+}
+
+// Lookup returns the current Rate for a model id — equivalent to LookupAt at
+// the present time. Returns the DefaultModel rate + ok=false on miss so callers
+// can mark the result as imputed in user-facing output.
+func Lookup(model string) (Rate, bool) {
+	key, ok := resolveKey(model)
+	return rates[key], ok
+}
+
+// LookupAt returns the Rate that applied to a model at time t. For a timestamp
+// before the current rate took effect it consults priceHistory, so spend in a
+// past period is priced at the rate in force then rather than at today's rate.
+// A zero t means "now" and yields the current rate. ok mirrors Lookup
+// (false ⇒ the id was unknown and DefaultModel was substituted).
+func LookupAt(model string, t time.Time) (Rate, bool) {
+	key, ok := resolveKey(model)
+	return resolveDated(rates[key], currentFrom[key], priceHistory[key], t), ok
+}
+
+// resolveDated picks the rate effective at t from a model's current rate, the
+// date that rate took effect (zero ⇒ it has always applied), and its ordered
+// history (oldest first). Pure, so it can be tested without the package tables.
+func resolveDated(cur Rate, curFrom time.Time, hist []datedRate, t time.Time) Rate {
+	if t.IsZero() || curFrom.IsZero() || !t.Before(curFrom) {
+		return cur
+	}
+	chosen := cur // fall back to the current rate if t predates all history
+	for _, dr := range hist {
+		if !dr.From.After(t) {
+			chosen = dr.Rate // last match ≤ t wins, since hist is oldest-first
+		}
+	}
+	return chosen
 }
 
 // Models returns the canonical list of known model ids. Stable order so

@@ -1,6 +1,9 @@
 package pricing
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestLookupExact(t *testing.T) {
 	r, ok := Lookup("claude-opus-4-7")
@@ -97,6 +100,52 @@ func TestLookupLongestPrefixWins(t *testing.T) {
 	r, ok = Lookup("gpt-4o-2024-08-06")
 	if !ok || r.Model != "gpt-4o" {
 		t.Errorf("versioned gpt-4o resolved to %q, want gpt-4o", r.Model)
+	}
+}
+
+func TestResolveDated(t *testing.T) {
+	cur := Rate{Model: "m", InputPerM: 20}
+	old := Rate{Model: "m", InputPerM: 10}
+	older := Rate{Model: "m", InputPerM: 5}
+
+	mar := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	jan := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	hist := []datedRate{{From: time.Time{}, Rate: older}, {From: jan, Rate: old}}
+
+	cases := []struct {
+		name    string
+		curFrom time.Time
+		hist    []datedRate
+		at      time.Time
+		want    float64
+	}{
+		{"zero time yields current", mar, hist, time.Time{}, 20},
+		{"no curFrom always current", time.Time{}, hist, jan, 20},
+		{"on/after curFrom is current", mar, hist, mar, 20},
+		{"after curFrom is current", mar, hist, mar.AddDate(0, 1, 0), 20},
+		{"between history entries", mar, hist, time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), 10},
+		{"before jan uses the epoch (oldest) rate", mar, hist, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), 5},
+		{"no history falls back to current", mar, nil, jan, 20},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := resolveDated(cur, c.curFrom, c.hist, c.at).InputPerM
+			if got != c.want {
+				t.Errorf("resolveDated = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestLookupAtMatchesLookupWhenNoHistory(t *testing.T) {
+	// With the shipped (single-snapshot) tables, LookupAt at any time must match
+	// Lookup — the dated path is inert until a price change is recorded.
+	for _, m := range []string{"claude-opus-4-7", "gpt-4o", "unknown-model"} {
+		now, _ := Lookup(m)
+		at, _ := LookupAt(m, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
+		if now != at {
+			t.Errorf("LookupAt(%q) = %+v, want %+v (no history yet)", m, at, now)
+		}
 	}
 }
 
