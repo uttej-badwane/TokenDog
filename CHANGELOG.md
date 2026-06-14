@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-06-14
+
 ### Added
 - **Windows & Linux system-tray app (`tray/`).** A cross-platform counterpart to the macOS menu-bar app: a Go system-tray companion (`fyne.io/systray`) that shows Claude API spend (today / month / lifetime) + TokenDog savings, polling the same `td spend --json` contract every 60s. On Linux the amount shows as text next to the icon (AppIndicator/StatusNotifier); on Windows it's in the hover tooltip + menu. It lives in its own Go module so its cgo system-tray dependency never touches the main `td` build, which stays CGO-free. Includes a `--selftest` flag, an embedded auto-generated paw icon (PNG for Linux/macOS, PNG-in-ICO for Windows), and per-OS `td` discovery (PATH, Homebrew, `~/go/bin`, Scoop/WinGet shims, `TOKENDOG_BIN`). See [tray/README.md](tray/README.md).
 
