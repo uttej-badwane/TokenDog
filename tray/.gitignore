@@ -1,0 +1,4 @@
+# Built binaries (the embedded icon PNG/ICO ARE committed — go:embed needs them)
+/tokendog-tray
+/tokendog-tray.exe
+/dist/

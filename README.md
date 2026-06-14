@@ -380,19 +380,31 @@ The proxy sees every byte of every Anthropic API request — including conversat
 
 The `redact` package scrubs AWS keys, GitHub tokens, Slack tokens, JWTs, and PEM blocks from `td purge --redact` and `td replay --redact` output. The proxy itself does not redact in-flight content (the model needs the originals to do its job).
 
-## 🍎 macOS menu bar
+## 🖥️ Desktop apps — spend at a glance
 
-A native menu-bar app shows your Claude spend at a glance — today, this month,
-lifetime — with TD's savings alongside. It reads only local data and shells out
-to `td spend --json`; no extra dependencies.
+A small status-bar app shows your Claude spend — today, this month, lifetime —
+with TD's savings alongside. Both read only local data and shell out to
+`td spend --json`; no extra dependencies. They live outside the main `td` build,
+which stays a single CGO-free binary.
+
+**macOS** — native menu-bar app ([macos/README.md](macos/README.md)):
 
 ```bash
 cd macos/TokenDogBar
 ./build.sh --install        # builds TokenDogBar.app → /Applications
 ```
 
-Then toggle **Launch at login** from the menu. Full details, source layout, and
-a `--selftest` check live in [macos/README.md](macos/README.md).
+Then toggle **Launch at login** from the menu.
+
+**Windows & Linux** — system-tray app ([tray/README.md](tray/README.md)):
+
+```bash
+cd tray
+go build -o tokendog-tray .  # tokendog-tray.exe on Windows
+./tokendog-tray
+```
+
+Both support `--selftest` to verify the data path without opening a UI.
 
 ## 🔌 MCP integration (Claude Desktop)
 
@@ -430,6 +442,7 @@ Exposes 6 tools to Claude Desktop: five read-only analytics queries (so you can 
 │   ├── tokenizer/             per-provider encodings (cl100k / o200k) via tiktoken-go
 │   └── transcript/            Claude session JSONL parser
 ├── macos/TokenDogBar/         native menu-bar app (Swift; reads `td spend --json`)
+├── tray/                       Windows/Linux system-tray app (Go module; cgo, isolated)
 └── scripts/install.sh         brew-less installer
 ```
 
