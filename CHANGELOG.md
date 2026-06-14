@@ -5,6 +5,12 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-06-14
+
+### Changed
+- **`td spend` now caches transcript parsing.** Spend previously re-walked and re-parsed all of `~/.claude/projects/**/*.jsonl` on every invocation — wasteful for the menu-bar/tray apps that re-run `td spend --json` on a 60s timer. A disk cache (`~/.config/tokendog/spend-cache.json`), keyed by each transcript's size + modtime, now serves unchanged files from cache and re-parses only those that changed, turning a steady-state refresh into one small read. Deleted sessions are pruned; only raw token rows are cached (never priced cost), so a pricing-data update needs no invalidation.
+- **Spend is priced at the rate in effect when each row was logged.** `internal/pricing` gained `LookupAt(model, t)`, backed by a per-model price history, and `internal/spend` now prices each usage row by its timestamp. Historical month/lifetime totals stay stable when a published price later changes, instead of being silently re-priced at today's rate. The dated path is inert until a price change is recorded, so current numbers are unchanged.
+
 ## [0.13.0] - 2026-06-14
 
 ### Added
