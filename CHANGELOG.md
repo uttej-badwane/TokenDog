@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-14
+
 ### Added
 - **`td spend` + macOS menu bar.** A new native menu-bar app (`macos/TokenDogBar/`, Swift/AppKit) shows your Claude API spend at a glance — today / this month / lifetime — with TokenDog's own savings and its share of the bill alongside. It's backed by a new `td spend` command: `internal/spend` computes spend natively by reading Claude Code's local usage logs (`~/.claude/projects/**/*.jsonl`) and pricing each message with the existing `internal/pricing` rate tables — **no ccusage, npx, or network dependency** — then joins that with `internal/analytics` savings. `td spend --json` emits a stable, versioned contract that the menu bar polls every 60s. To support per-day bucketing, `internal/transcript` gained `Entries()`, a deduped per-message reader (timestamp + model + usage) that shares the streaming-dedup rule with `Read()`. The `td` binary stays CGO-free; the menu-bar app builds separately with `swiftc`/SwiftPM (Command Line Tools are enough — full Xcode not required) and ships as a `.app`. See [macos/README.md](macos/README.md).
 
