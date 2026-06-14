@@ -340,6 +340,18 @@ td gain --daily            # day-by-day time series
 td gain --json             # pipeable to jq or dashboards
 ```
 
+### `td spend` — what Claude is actually costing you
+
+```bash
+td spend                   # Claude API spend: today / this month / lifetime
+td spend --json            # stable, versioned contract (drives the macOS menu bar)
+```
+
+Prices Claude Code's local usage logs (`~/.claude/projects/**/*.jsonl`) with
+TokenDog's per-model rates — **no ccusage, no network**. Shows the savings TD
+clawed back alongside, so you see both the bill and the discount. This is the
+data source behind the [macOS menu bar](#-macos-menu-bar).
+
 ### `td replay` — counterfactual: "what if I'd had td running all year?"
 
 ```bash
@@ -367,6 +379,20 @@ Most users only run these via `td setup` — they're here for when something bre
 The proxy sees every byte of every Anthropic API request — including conversation content, tool outputs, and any pasted secrets. Nothing leaves your machine; analytics writes to `~/.config/tokendog/` only. See [SECURITY.md](SECURITY.md) for the full data flow and threat model.
 
 The `redact` package scrubs AWS keys, GitHub tokens, Slack tokens, JWTs, and PEM blocks from `td purge --redact` and `td replay --redact` output. The proxy itself does not redact in-flight content (the model needs the originals to do its job).
+
+## 🍎 macOS menu bar
+
+A native menu-bar app shows your Claude spend at a glance — today, this month,
+lifetime — with TD's savings alongside. It reads only local data and shells out
+to `td spend --json`; no extra dependencies.
+
+```bash
+cd macos/TokenDogBar
+./build.sh --install        # builds TokenDogBar.app → /Applications
+```
+
+Then toggle **Launch at login** from the menu. Full details, source layout, and
+a `--selftest` check live in [macos/README.md](macos/README.md).
 
 ## 🔌 MCP integration (Claude Desktop)
 
@@ -399,9 +425,11 @@ Exposes 6 tools to Claude Desktop: five read-only analytics queries (so you can 
 │   ├── proxy/                 thin MITM frontend over core (cert + launchd)
 │   ├── redact/                secret-scrubbing regex pack
 │   ├── replay/                transcript walker + counterfactual savings
+│   ├── spend/                 Claude spend from local usage logs (drives `td spend`)
 │   ├── stash/                 reversible-compression store (originals + preview)
 │   ├── tokenizer/             per-provider encodings (cl100k / o200k) via tiktoken-go
 │   └── transcript/            Claude session JSONL parser
+├── macos/TokenDogBar/         native menu-bar app (Swift; reads `td spend --json`)
 └── scripts/install.sh         brew-less installer
 ```
 

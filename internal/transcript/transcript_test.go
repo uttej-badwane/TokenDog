@@ -118,3 +118,30 @@ func TestMissingFile(t *testing.T) {
 		t.Error("expected error for missing file")
 	}
 }
+
+// TestEntriesDedupAndFields: Entries must apply the same streaming dedup as
+// Read (the intermediate row is dropped) and preserve timestamp + model on the
+// rows it keeps.
+func TestEntriesDedupAndFields(t *testing.T) {
+	lines := []string{
+		`{"type":"assistant","sessionId":"x","timestamp":"2026-05-05T10:00:00Z","message":{"model":"claude-opus-4-7","stop_reason":null,"usage":{"input_tokens":50,"output_tokens":10}}}`,
+		`{"type":"assistant","sessionId":"x","timestamp":"2026-05-05T10:00:01Z","message":{"model":"claude-opus-4-7","stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":25,"cache_read_input_tokens":7,"cache_creation_input_tokens":3}}}`,
+	}
+	entries, err := Entries(writeTranscript(t, lines))
+	if err != nil {
+		t.Fatalf("Entries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("len(entries) = %d, want 1 (intermediate row should be dropped)", len(entries))
+	}
+	e := entries[0]
+	if e.Input != 100 || e.Output != 25 || e.CacheRead != 7 || e.CacheCreation != 3 {
+		t.Errorf("usage = %+v, want in=100 out=25 cr=7 cc=3", e)
+	}
+	if e.Model != "claude-opus-4-7" {
+		t.Errorf("Model = %q, want claude-opus-4-7", e.Model)
+	}
+	if e.Timestamp.IsZero() {
+		t.Error("Timestamp should be parsed, got zero")
+	}
+}

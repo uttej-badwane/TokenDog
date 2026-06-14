@@ -1,0 +1,5 @@
+# Swift build output
+.build/
+dist/
+*.xcodeproj
+Package.resolved
