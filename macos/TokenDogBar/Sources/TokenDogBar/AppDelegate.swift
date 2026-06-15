@@ -118,7 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
-        addHeader("SPEND")
+        addHeader("Spend")
         if let days = r.spend.daily, !days.isEmpty {
             for (i, d) in days.enumerated() where i < 2 || d.usd > 0 {
                 addInfo(d.label, Money.precise(d.usd))
@@ -136,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         if let models = r.spend.byModelToday, !models.isEmpty {
             menu.addItem(.separator())
-            addHeader("TODAY BY MODEL")
+            addHeader("Today by Model")
             for m in models { addInfo(m.model, Money.precise(m.usd)) }
         }
         if let t = r.spend.tokensToday, t.total > 0 {
@@ -145,7 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
-        addHeader("TOKENDOG SAVINGS")
+        addHeader("TokenDog Savings")
         addInfo("Saved today", Money.micro(r.saved.today))
         addInfo("Saved all-time", Money.micro(r.saved.lifetime))
         if r.sharePct > 0 {
