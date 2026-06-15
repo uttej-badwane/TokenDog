@@ -39,7 +39,10 @@ swiftc -O \
 echo "› Copying resources…"
 RES_DIR="$APP/Contents/Resources"
 mkdir -p "$RES_DIR"
-cp Resources/*.png "$RES_DIR/" 2>/dev/null || true
+# Brand assets: the menu-bar status glyph (MenuBarIcon.png) and the app icon
+# shown in Finder/Dock/Spotlight (AppIcon.icns). Both are committed under
+# Resources/ so a fresh clone builds with the right icons.
+cp Resources/* "$RES_DIR/" 2>/dev/null || true
 
 echo "› Writing Info.plist…"
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -51,6 +54,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleDisplayName</key>     <string>TokenDog Bar</string>
     <key>CFBundleIdentifier</key>      <string>$BUNDLE_ID</string>
     <key>CFBundleExecutable</key>      <string>$APP_NAME</string>
+    <key>CFBundleIconFile</key>        <string>AppIcon</string>
     <key>CFBundlePackageType</key>     <string>APPL</string>
     <key>CFBundleShortVersionString</key> <string>0.1.0</string>
     <key>CFBundleVersion</key>         <string>1</string>

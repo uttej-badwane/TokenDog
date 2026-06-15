@@ -34,14 +34,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// Loads the bundled TokenDog mark, sized for the status bar. Rendered in
-    /// full colour (not a template image) — the coin is the brand and reads
-    /// well at this size, where a flat monochrome silhouette would not.
+    /// Loads the brand-kit menu-bar mark — a monochrome template silhouette.
+    /// As a template image, AppKit renders it dark on light menu bars and light
+    /// on dark ones, staying crisp where a detailed colour badge goes soft.
+    /// `NSImage(named:)` resolves the @2x/@3x variants for the screen scale.
     private static func barIcon() -> NSImage? {
-        guard let path = Bundle.main.path(forResource: "MenuBarIcon", ofType: "png"),
-              let img = NSImage(contentsOfFile: path) else { return nil }
+        guard let img = NSImage(named: "MenuBarIconTemplate") else { return nil }
+        img.isTemplate = true
         img.size = NSSize(width: 18, height: 18)
-        img.isTemplate = false
         return img
     }
 
