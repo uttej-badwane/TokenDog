@@ -5,6 +5,15 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-06-15
+
+### Added
+- **Circular (token-shaped) brand.** The brand kit moved from a square mark to a circular badge — the round coin reads as a token, which fits the product. Re-vendored the kit (`brand/`): colour circular menu-bar badge set, circular app icons (light + dark), circular favicons. The website, README banner, macOS app icon, and Windows/Linux tray icon all pick up the circular mark.
+- **`td spend --json` schema 2 — richer, still self-contained.** The contract (priced natively from `~/.claude/projects/**/*.jsonl`, no `ccusage`/`npx`/network) now also emits: a trailing **7-day daily series** (each with a display label), **today's spend split per model** (Opus/Sonnet/Haiku), **today's token counts** (input/output/cache-read/cache-creation), and an **earliest-log date label** so an all-time figure can be honestly qualified as "since <date>" rather than implying true lifetime. Additive and backward-compatible; older schema-1 clients ignore the new fields.
+
+### Changed
+- **macOS menu bar is icon-only with a far richer dropdown.** The bar shows just the circular badge — no dollar figure. The dropdown now breaks spend down by day (today / yesterday / recent), month-to-date, and all-time (qualified by the earliest log date), plus today's per-model split and token counts. It also surfaces a **capture-status** line: spending today with ~zero TokenDog savings means TD isn't intercepting the traffic, so the menu says so (and points at `td setup`) instead of silently showing a misleading near-$0 savings figure. The colour badge loads with `isTemplate = false`.
+
 ## [0.15.0] - 2026-06-14
 
 ### Added

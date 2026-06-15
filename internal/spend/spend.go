@@ -13,6 +13,8 @@ package spend
 import (
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"tokendog/internal/analytics"
@@ -28,6 +30,41 @@ type SpendBlock struct {
 	Lifetime  float64 `json:"lifetime"`
 	Currency  string  `json:"currency"`
 	Available bool    `json:"available"`
+	// EarliestLabel is the formatted date of the oldest usage row in the local
+	// Claude logs (e.g. "Jun 1, 2026"), or "" when none. "Lifetime" only spans
+	// what those logs still contain (Claude Code prunes old sessions), so the UI
+	// labels the all-time figure honestly as "since <EarliestLabel>" rather than
+	// implying true all-time spend. Pre-formatted to keep the JSON date-free.
+	EarliestLabel string `json:"earliest_label"`
+	// ByModelToday is today's spend split per model family (Opus/Sonnet/Haiku),
+	// highest first — the breakdown a developer actually wants at a glance.
+	ByModelToday []ModelSpend `json:"by_model_today"`
+	// TokensToday is today's raw token usage across all models.
+	TokensToday TokenBlock `json:"tokens_today"`
+	// Daily is the last 7 days of spend, most-recent first, each with a
+	// display-ready label ("Today", "Yesterday", "Fri 13").
+	Daily []DaySpend `json:"daily"`
+}
+
+// DaySpend is one calendar day's USD spend with a display label.
+type DaySpend struct {
+	Date  string  `json:"date"`  // local YYYY-MM-DD
+	Label string  `json:"label"` // "Today" / "Yesterday" / "Mon 9"
+	USD   float64 `json:"usd"`
+}
+
+// ModelSpend is one model family's USD spend for a period.
+type ModelSpend struct {
+	Model string  `json:"model"`
+	USD   float64 `json:"usd"`
+}
+
+// TokenBlock is a raw token count split by kind.
+type TokenBlock struct {
+	Input         int `json:"input"`
+	Output        int `json:"output"`
+	CacheRead     int `json:"cache_read"`
+	CacheCreation int `json:"cache_creation"`
 }
 
 // SavedBlock holds TokenDog's own savings, for the "TD saved of it" line.
@@ -48,7 +85,7 @@ type Report struct {
 	TDVersion   string     `json:"td_version"`
 }
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 // logDir returns the directory Claude Code writes session transcripts to.
 // Overridable via TD_CLAUDE_PROJECTS for tests and non-standard installs.
@@ -102,6 +139,10 @@ func computeSpend(now time.Time) (SpendBlock, error) {
 	// transcripts that actually changed instead of the whole tree.
 	reader := loadCache()
 	seen := make(map[string]struct{})
+	byModel := make(map[string]float64)
+	daily := make(map[string]float64)
+	var tokens TokenBlock
+	var earliest time.Time
 
 	walkErr := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -121,20 +162,93 @@ func computeSpend(now time.Time) (SpendBlock, error) {
 			if e.Timestamp.IsZero() {
 				continue // counts toward lifetime, but no day/month bucket
 			}
+			if earliest.IsZero() || e.Timestamp.Before(earliest) {
+				earliest = e.Timestamp
+			}
 			ts := e.Timestamp.Local()
+			daily[ts.Format("2006-01-02")] += cost
 			if !ts.Before(monthStart) {
 				block.Month += cost
 			}
 			if !ts.Before(dayStart) {
 				block.Today += cost
+				byModel[shortModel(e.Model)] += cost
+				tokens.Input += e.Input
+				tokens.Output += e.Output
+				tokens.CacheRead += e.CacheRead
+				tokens.CacheCreation += e.CacheCreation
 			}
 		}
 		return nil
 	})
 
+	block.TokensToday = tokens
+	block.ByModelToday = sortModelSpend(byModel)
+	block.Daily = lastSevenDays(now, daily)
+	if !earliest.IsZero() {
+		block.EarliestLabel = earliest.Local().Format("Jan 2, 2006")
+	}
+
 	reader.prune(seen)
 	reader.save()
 	return block, walkErr
+}
+
+// shortModel collapses a versioned model id (e.g. "claude-opus-4-7") to its
+// family label for display. Unknown ids pass through unchanged.
+func shortModel(model string) string {
+	m := strings.ToLower(model)
+	switch {
+	case m == "":
+		return "Unknown"
+	case strings.Contains(m, "opus"):
+		return "Opus"
+	case strings.Contains(m, "sonnet"):
+		return "Sonnet"
+	case strings.Contains(m, "haiku"):
+		return "Haiku"
+	default:
+		return model
+	}
+}
+
+// lastSevenDays builds the trailing-7-day series ending today, most-recent
+// first, with display-ready labels. Days with no usage are included as $0 so
+// the breakdown reads as a continuous strip.
+func lastSevenDays(now time.Time, byDay map[string]float64) []DaySpend {
+	out := make([]DaySpend, 0, 7)
+	start := startOfDay(now)
+	for i := 0; i < 7; i++ {
+		d := start.AddDate(0, 0, -i)
+		key := d.Format("2006-01-02")
+		var label string
+		switch i {
+		case 0:
+			label = "Today"
+		case 1:
+			label = "Yesterday"
+		default:
+			label = d.Format("Mon 2")
+		}
+		out = append(out, DaySpend{Date: key, Label: label, USD: byDay[key]})
+	}
+	return out
+}
+
+// sortModelSpend turns the per-model map into a slice ordered by spend
+// descending (ties broken by name) so the UI renders a stable, ranked list.
+func sortModelSpend(m map[string]float64) []ModelSpend {
+	out := make([]ModelSpend, 0, len(m))
+	for k, v := range m {
+		out = append(out, ModelSpend{Model: k, USD: v})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].USD != out[j].USD {
+			return out[i].USD > out[j].USD
+		}
+		return out[i].Model < out[j].Model
+	})
+	return out
 }
 
 // computeSaved derives TokenDog's savings from its analytics history: lifetime
