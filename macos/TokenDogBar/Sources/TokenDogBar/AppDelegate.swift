@@ -155,21 +155,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Menu item builders
 
-    /// A disabled two-column row ("Label⇥value") with a tab stop so values align.
+    /// Tab stop where the value column begins. Wide enough for the longest label.
+    private static let valueColumn: CGFloat = 168
+
+    /// A non-interactive two-column row: a medium-weight label and a bold,
+    /// monospaced-digit value aligned in a column. Rendered via attributedTitle
+    /// with explicit colours so it reads at full contrast instead of the dim
+    /// disabled-grey AppKit applies to plain disabled items.
     private func addInfo(_ label: String, _ value: String) {
-        let title = value.isEmpty ? label : "\(label)\t\(value)"
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         item.isEnabled = false
+
+        let para = NSMutableParagraphStyle()
+        para.tabStops = [NSTextTab(textAlignment: .left, location: Self.valueColumn)]
+
+        let s = NSMutableAttributedString(string: label, attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .regular),
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .paragraphStyle: para,
+        ])
+        if !value.isEmpty {
+            s.append(NSAttributedString(string: "\t" + value, attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold),
+                .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: para,
+            ]))
+        }
+        item.attributedTitle = s
         menu.addItem(item)
     }
 
-    /// A small uppercase section label.
+    /// A small uppercase section label — readable, not faint.
     private func addHeader(_ text: String) {
         let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
         item.isEnabled = false
         item.attributedTitle = NSAttributedString(string: text, attributes: [
-            .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
-            .foregroundColor: NSColor.tertiaryLabelColor,
+            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+            .foregroundColor: NSColor.secondaryLabelColor,
             .kern: 0.8,
         ])
         menu.addItem(item)
@@ -181,7 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.isEnabled = false
         item.attributedTitle = NSAttributedString(string: text, attributes: [
             .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.tertiaryLabelColor,
+            .foregroundColor: NSColor.secondaryLabelColor,
         ])
         menu.addItem(item)
     }
