@@ -34,13 +34,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// Loads the brand-kit menu-bar mark — a monochrome template silhouette.
-    /// As a template image, AppKit renders it dark on light menu bars and light
-    /// on dark ones, staying crisp where a detailed colour badge goes soft.
+    /// Loads the brand-kit menu-bar mark — the circular token badge, tuned for
+    /// small sizes (thicker bone ring, boosted contrast). It's colour, not a
+    /// template, so the terracotta + bone reads on both light and dark bars.
     /// `NSImage(named:)` resolves the @2x/@3x variants for the screen scale.
     private static func barIcon() -> NSImage? {
-        guard let img = NSImage(named: "MenuBarIconTemplate") else { return nil }
-        img.isTemplate = true
+        guard let img = NSImage(named: "MenuBarIcon") else { return nil }
+        img.isTemplate = false
         img.size = NSSize(width: 18, height: 18)
         return img
     }

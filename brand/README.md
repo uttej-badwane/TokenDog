@@ -10,15 +10,17 @@ Friendly, dependable, a little hand-made — the tone of a tool that quietly sav
 
 ## Logo system
 
-There are two marks. Use the one that fits the container.
+The brand is **circular**. The primary mark is the round **Badge** — the dog inside a bone
+ring — and it's used everywhere the shape can be round: favicon, menu bar, avatars, app
+icon, header. The square **Portrait** is the secondary mark for large rectangular space.
 
 | Mark | What it is | Use for |
 |------|-----------|---------|
-| **Portrait** (`logo-square-master-*`) | The dog on terracotta, full bleed | Primary logo, docs, slides, README hero, merch |
-| **Badge** (`logo-badge-*`) | The dog inside a bone ring | App icon, favicon, avatars, anywhere round/small |
+| **Badge** (`logo-badge-*`, circular) | The dog inside a bone ring, round | **Primary** — favicon, menu bar, avatars, app icon, header, anywhere round/small |
+| **Portrait** (`logo-square-master-*`) | The dog on terracotta, full bleed | Secondary — docs, slides, README hero, merch, large rectangular space |
 
-When in doubt, the **Badge** is the safer mark for small or circular crops; the **Portrait**
-is the richer mark for large or rectangular space.
+Circular assets ship with **transparent corners** so they drop onto any background and read
+as a coin. The only deliberately **square** asset is the store app icon (see 03-social).
 
 ---
 
@@ -51,10 +53,10 @@ The wordmark "TokenDog" is set as one word, no space, capital **T** and **D**.
 ### 01-website
 | File | Size | Purpose |
 |------|------|---------|
-| `favicon.ico` | 16/32/48/64 | Multi-resolution browser favicon |
-| `favicon-16/32/48.png` | — | Individual small favicons |
-| `favicon-64/128/180/192/512.png` | — | PWA / Apple-touch / Android icons |
-| `header-logo-square-100x100.png` | 100×100 | Square site header mark (badge) |
+| `favicon.ico` | 16/32/48/64 | Multi-resolution browser favicon (**circular**, transparent corners) |
+| `favicon-16/32/48.png` | — | Small favicons — legibility-tuned (thicker ring, boosted contrast) |
+| `favicon-64/128/180/192/512.png` | — | PWA / Apple-touch / Android icons (circular) |
+| `header-logo-square-100x100.png` | 100×100 | Round site header mark (circular badge, transparent corners) |
 | `header-logo-horizontal-250x150.png` | 250×150 | Horizontal header lockup (badge + wordmark) |
 | `header-logo-horizontal@4x-1000x600.png` | 1000×600 | Retina version of the lockup |
 | `hero-1920x1080.png` | 1920×1080 | 16:9 hero / banner background |
@@ -70,8 +72,9 @@ The wordmark "TokenDog" is set as one word, no space, capital **T** and **D**.
 ### 03-social
 | File | Size | Purpose |
 |------|------|---------|
-| `profile-400x400.png` | 400×400 | X / Instagram / LinkedIn / Facebook avatar (badge) |
-| `app-icon-1024x1024.png` | 1024×1024 | iOS App Store / Google Play (full bleed, no alpha) |
+| `profile-400x400.png` | 400×400 | X / Instagram / LinkedIn / Facebook avatar (**circular**, transparent corners) |
+| `app-icon-1024x1024.png` | 1024×1024 | iOS App Store / Google Play — **square, full bleed, no alpha** (stores require it & apply their own mask) |
+| `app-icon-circular-1024x1024.png` | 1024×1024 | Circular app icon for non-store / in-product display |
 | `og-card-1200x630.png` | 1200×630 | Open Graph / Twitter card (link previews) |
 
 ### 04-swatches-extras
@@ -93,6 +96,20 @@ header lockup (250×150 + @4×), a transparent circular badge, and `og-card-dark
 | `wordmark-terracotta.svg` / `-bone.svg` / `-ink.svg` | "TokenDog" wordmark in each brand colour |
 | `logo-lockup-light.svg` | Circular badge + terracotta wordmark, transparent — for light backgrounds |
 | `logo-lockup-dark.svg` | Circular badge (ink) + bone wordmark, transparent — for dark backgrounds |
+
+### 07-menubar — macOS menu-bar icon
+Full-colour circular badge, **tuned for small sizes** (thicker bone ring, slightly larger
+dog, boosted contrast so the eyes/nose/smile read down to 18 px).
+| File | Purpose |
+|------|---------|
+| `menubar-circle.png` / `@2x` / `@3x` | 18 pt at @1x (18) / @2x (36) / @3x (54) |
+| `menubar-circle-22.png`, `-44.png` | 22 px (common bar height) and 44 px hi-res |
+| `_preview-18opt.png` | Shown on a bar at 18/22/36 px, plus 4× blow-ups |
+
+> Load as a normal image with `isTemplate = false` (it's colour, not a template). The
+> terracotta + bone reads on both light and dark bars. On Retina the `@2x` (36 px) renders;
+> the small terracotta gap between the bone ring and the dog is what keeps the badge legible
+> at 18 px. A monochrome auto-tinting **template** silhouette can be regenerated on request.
 
 > **SVG note:** wordmarks use a live `<text>` element with a serif font stack
 > (`Baskerville → Georgia → Times → serif`). For pixel-perfect production where the
