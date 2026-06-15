@@ -36,6 +36,11 @@ swiftc -O \
     -o "$MACOS_DIR/$APP_NAME" \
     Sources/$APP_NAME/*.swift
 
+echo "› Copying resources…"
+RES_DIR="$APP/Contents/Resources"
+mkdir -p "$RES_DIR"
+cp Resources/*.png "$RES_DIR/" 2>/dev/null || true
+
 echo "› Writing Info.plist…"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

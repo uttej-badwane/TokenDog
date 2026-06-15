@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Simplified TokenDog badge for tiny slots (macOS menu bar / small systray).
+       Flat shapes in the brand palette so it stays legible at 16–22px where the
+       engraved portrait goes soft. Terracotta disc + bone ring + a minimal
+       Samoyed head. -->
+  <circle cx="32" cy="32" r="30" fill="#C15E3C"/>
+  <circle cx="32" cy="32" r="30" fill="none" stroke="#A94E30" stroke-width="2"/>
+  <circle cx="32" cy="32" r="25" fill="none" stroke="#ECE6D7" stroke-width="2.4"/>
+
+  <!-- Samoyed head (bone), pointed ears + cheeks -->
+  <g fill="#F4EFE4">
+    <path d="M19 27 C15 16 20 11 27 15 C30 21 30 28 28 33 Z"/>
+    <path d="M45 27 C49 16 44 11 37 15 C34 21 34 28 36 33 Z"/>
+    <path d="M32 19 C42 19 49 26 49 36 C49 45 42 50 32 50 C22 50 15 45 15 36 C15 26 22 19 32 19 Z"/>
+  </g>
+
+  <!-- eyes + nose (ink) -->
+  <circle cx="26" cy="33" r="2.4" fill="#2A2521"/>
+  <circle cx="38" cy="33" r="2.4" fill="#2A2521"/>
+  <path d="M32 39 C35 39 37 41 35.5 43.5 C34.6 45 33.3 45.6 32 45.6 C30.7 45.6 29.4 45 28.5 43.5 C27 41 29 39 32 39 Z" fill="#2A2521"/>
+</svg>

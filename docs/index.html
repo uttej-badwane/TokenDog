@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TokenDog — compress tool output before your AI agent pays for it</title>
+<meta name="description" content="TokenDog sits between your AI coding agent and the model, losslessly compressing tool_result output before it's billed. Cache-safe, single Go binary, nothing leaves your machine.">
+<link rel="icon" href="assets/favicon.ico" sizes="any">
+<link rel="icon" href="assets/favicon-32.png" type="image/png">
+<link rel="apple-touch-icon" href="assets/favicon-180.png">
+<meta property="og:title" content="TokenDog — compress tokens before they're billed">
+<meta property="og:description" content="Lossless, cache-safe compression of tool output for AI coding agents. ~25 filters, dedup, reversible stash. Single Go binary.">
+<meta property="og:image" content="assets/og.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400;1,6..72,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+
+<header class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="assets/badge.png" alt="TokenDog logo"><span>TokenDog</span></a>
+    <div class="right">
+      <nav>
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#filters">Filters</a>
+        <a href="#apps">Desktop</a>
+      </nav>
+      <a class="btn line" href="https://github.com/uttej-badwane/TokenDog" target="_blank" rel="noopener">View on GitHub</a>
+    </div>
+  </div>
+</header>
+
+<a id="top"></a>
+<section class="hero">
+  <div class="wrap">
+    <div class="copy">
+      <span class="label eyebrow">Lossless · cache-safe · local-only</span>
+      <h1>Compress the tool output your AI agent is about to <em>pay for</em>.</h1>
+      <p class="lead">TokenDog sits between your coding agent and the model, finds the <code>tool_result</code> blocks in every request, and shrinks them before the tokens are billed — keeping every answer-bearing fact, and proving it does.</p>
+      <div class="cta-row">
+        <a class="btn solid" href="#install">Get started →</a>
+        <a class="btn line" href="https://github.com/uttej-badwane/TokenDog" target="_blank" rel="noopener">Read the source</a>
+      </div>
+      <div class="cmd" id="cmd">
+        <span class="dollar">$</span><span id="cmdtext">brew install uttej-badwane/tokendog/tokendog</span>
+        <button onclick="copyCmd()" id="copybtn">copy</button>
+      </div>
+    </div>
+    <div class="art">
+      <img class="float" src="assets/badge.png" alt="TokenDog — engraved Samoyed badge">
+    </div>
+  </div>
+</section>
+
+<div class="trust">
+  <div class="wrap">
+    <span class="label">Compresses for</span>
+    <span class="val">ANTHROPIC</span><span class="sep">·</span>
+    <span class="val">OPENAI</span><span class="sep">·</span>
+    <span class="val">AWS BEDROCK</span>
+    <span class="sep">·</span><span class="label">one engine, swappable adapters</span>
+  </div>
+</div>
+
+<!-- terminal demo -->
+<section style="padding-top:72px;padding-bottom:0">
+  <div class="wrap" style="max-width:760px">
+    <div class="term">
+      <div class="bar"><i></i><i></i><i></i></div>
+<pre><span class="g">$</span> td gain --since 1d
+<span class="dim">TokenDog Savings (last 24h)</span>
+<span class="dim">══════════════════════════════════════════════════════════</span>
+Total commands:     <span class="hl">142</span> <span class="dim">(proxy: 138, hook: 4)</span>
+Saved:              <span class="hl">48.2KB</span> (12,403 tokens, <span class="g">18.7%</span>)
+Cost saved:         <span class="g">$0.19</span> <span class="dim">(per-model rates, cl100k)</span></pre>
+    </div>
+  </div>
+</section>
+
+<!-- features -->
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="label">Why TokenDog</span>
+      <h2>It's not just the bill — it's your <em>context window</em>.</h2>
+      <p>Token prices keep falling. The durable win is spending your context budget on signal instead of <code>git status</code> noise.</p>
+    </div>
+    <div class="grid">
+      <div class="card"><span class="label">Filters</span><h3>~25 lossless filters</h3><p><code>git</code> · <code>kubectl</code> · <code>terraform</code> · <code>gh</code> · <code>jq</code> · <code>npm</code> · test runners — structural noise stripped, signal kept verbatim.</p></div>
+      <div class="card"><span class="label">Reversible</span><h3>Deferred, never lost</h3><p>Stash huge outputs, send a preview, let the model pull the original back on demand via MCP. Nothing is lost, only deferred.</p></div>
+      <div class="card"><span class="label">Dedup</span><h3>Cross-message dedup</h3><p>Re-read the same file? The duplicate collapses to a one-line back-reference — it's verbatim above already.</p></div>
+      <div class="card"><span class="label">Ingress</span><h3>Two ways in</h3><p>The MITM proxy (zero client config) or <code>td gateway</code> — explicit <code>base_url</code>, no CA cert. Security-team friendly.</p></div>
+      <div class="card"><span class="label">Eval</span><h3>Proven quality</h3><p><code>td eval</code> shows deterministically that no answer-bearing fact is ever dropped. Numbers, not vibes.</p></div>
+      <div class="card"><span class="label">Measurement</span><h3>Honest savings</h3><p><code>td gain</code> prices real per-model savings; <code>td replay</code> runs the counterfactual on your own history.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- how it works — dark editorial card -->
+<section id="how">
+  <div class="wrap">
+    <div class="feature">
+      <img class="watermark" src="assets/dog-knockout.png" alt="">
+      <span class="label">How it works</span>
+      <h2>A localhost daemon between <em>agent and model</em>.</h2>
+      <p class="sub">It MITMs only your provider's API host — every other CONNECT is tunnelled through untouched.</p>
+<div class="flow">Claude Code (or any client respecting HTTPS_PROXY)
+                    │
+                    ▼  HTTPS_PROXY=http://127.0.0.1:8888
+            ┌──────────────────────────┐
+            │ <b>TokenDog proxy</b>            │  localhost daemon
+            │  • parse Messages request │
+            │  • filter tool_result[]   │  git · gh · kubectl · terraform
+            │  • dedup + reversible     │  find · jq · curl · ~25 filters
+            │  • re-serialize           │
+            └────────────┬─────────────┘
+                         │ filtered payload
+                         ▼
+                  api.anthropic.com</div>
+      <p class="note"><b>Cache-safe by construction.</b> Only the last <code>tool_result</code> is filtered — the part the prompt cache hasn't hashed yet. TokenDog is complementary to prompt caching, never a competitor to it.</p>
+    </div>
+  </div>
+</section>
+
+<!-- filters -->
+<section id="filters">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="label">What gets filtered</span>
+      <h2>Per-tool compaction, <em>never lossy</em>.</h2>
+      <p>Every filter holds the universal <code>Guard</code> invariant: output bytes ≤ input bytes. If filtering would lose data, the original passes through unchanged.</p>
+    </div>
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <thead><tr><th>Tool</th><th>Strategy</th><th>Reduction</th></tr></thead>
+        <tbody>
+          <tr><td>git status/log/diff</td><td>Compact format, drop index metadata</td><td>30–85%</td></tr>
+          <tr><td>gh pr/issue/run</td><td>Column normalization, JSON compaction</td><td>30–60%</td></tr>
+          <tr><td>kubectl get/describe</td><td>Table compaction, blank-line collapse</td><td>20–60%</td></tr>
+          <tr><td>terraform plan/apply</td><td>Drop refresh spam, keep diffs verbatim</td><td>40–70%</td></tr>
+          <tr><td>find</td><td>Group by directory, skip .git / node_modules</td><td>70–95%</td></tr>
+          <tr><td>pytest/jest/go test</td><td>Summary on pass, verbatim on failure</td><td>60–95%</td></tr>
+          <tr><td>aws/gcloud/az</td><td>Lossless JSON re-marshal, table normalize</td><td>30–80%</td></tr>
+          <tr><td>jq, curl (JSON)</td><td>Lossless compaction, no indentation</td><td>40–70%</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- deployment modes -->
+<section id="modes">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="label">Deployment modes</span>
+      <h2>Zero-config, or <em>zero-trust</em>. Your call.</h2>
+    </div>
+    <div class="two">
+      <div class="mode">
+        <div class="toprow"><h3>td proxy</h3></div>
+        <div class="sub">HTTPS_PROXY + local MITM</div>
+        <ul>
+          <li>One command: <code>td setup</code> wires cert, auto-start &amp; env</li>
+          <li>Zero client configuration</li>
+          <li>Best for individual developers</li>
+        </ul>
+      </div>
+      <div class="mode feat">
+        <div class="toprow"><h3>td gateway</h3><span class="tag">NO CA CERT</span></div>
+        <div class="sub">SDK base_url → 127.0.0.1:8099</div>
+        <ul>
+          <li>No trust-store changes, fully auditable</li>
+          <li>Front an existing gateway (LiteLLM, etc.)</li>
+          <li>Best for teams &amp; security-conscious setups</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- desktop apps -->
+<section id="apps">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="label">Desktop apps</span>
+      <h2>Your Claude spend, <em>at a glance</em>.</h2>
+      <p>A small status-bar companion shows spend — today / month / lifetime — with TokenDog's savings alongside. Reads local data only.</p>
+    </div>
+    <div class="apps">
+      <div class="appcard">
+        <div class="mb"><img src="assets/menubar-glyph.png" alt=""><span>$2.40 today</span></div>
+        <h3>macOS — native menu bar</h3>
+        <p>Swift/AppKit app backed by <code>td spend --json</code>. Toggle launch-at-login from the menu.</p>
+        <pre>cd macos/TokenDogBar
+./build.sh --install</pre>
+      </div>
+      <div class="appcard">
+        <div class="mb"><img src="assets/menubar-glyph.png" alt=""><span>$2.40 today</span></div>
+        <h3>Windows &amp; Linux — system tray</h3>
+        <p>Cross-platform Go companion polling the same contract every 60s. Isolated cgo module.</p>
+        <pre>cd tray
+go build -o tokendog-tray .
+./tokendog-tray</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- install — dark editorial card -->
+<section id="install">
+  <div class="wrap">
+    <div class="feature">
+      <img class="watermark" src="assets/dog-knockout.png" alt="">
+      <span class="label">Get started</span>
+      <h2>Install in <em>one line</em>.</h2>
+      <p class="sub">Restart your AI client, then watch the savings roll in with <code>td gain</code>.</p>
+      <div class="term" style="margin-top:28px">
+        <div class="bar"><i></i><i></i><i></i></div>
+<pre><span class="g">$</span> brew tap uttej-badwane/tokendog
+<span class="g">$</span> brew install tokendog
+<span class="g">$</span> td setup            <span class="dim"># cert + auto-start + proxy env, all wired</span>
+
+<span class="dim"># prefer no CA cert? skip the MITM entirely:</span>
+<span class="g">$</span> td gateway --port 8099 --upstream https://api.anthropic.com
+<span class="g">$</span> ANTHROPIC_BASE_URL=http://127.0.0.1:8099 claude</pre>
+      </div>
+      <div class="cta-row" style="margin-top:28px">
+        <a class="btn ondark" href="https://github.com/uttej-badwane/TokenDog#-quick-start" target="_blank" rel="noopener">Full quick-start →</a>
+        <a class="btn lineondark" href="https://github.com/uttej-badwane/TokenDog" target="_blank" rel="noopener">Star on GitHub</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="assets/badge.png" alt="" style="width:28px;height:28px"><span class="serif">TokenDog</span></a>
+    <div class="links">
+      <a href="https://github.com/uttej-badwane/TokenDog" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/uttej-badwane/TokenDog/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+      <a href="https://github.com/uttej-badwane/TokenDog/blob/main/SECURITY.md" target="_blank" rel="noopener">Security</a>
+      <a href="https://github.com/uttej-badwane/TokenDog/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a>
+    </div>
+    <div class="tag">Built for people who'd rather spend their context window on signal than on git status.</div>
+  </div>
+</footer>
+
+<script>
+function copyCmd(){
+  const t=document.getElementById('cmdtext').innerText;
+  navigator.clipboard.writeText(t).then(()=>{
+    const b=document.getElementById('copybtn');b.innerText='copied ✓';
+    setTimeout(()=>b.innerText='copy',1600);
+  });
+}
+const nav=document.getElementById('nav');
+addEventListener('scroll',()=>nav.classList.toggle('scrolled',scrollY>8));
+
+// Scroll-reveal — progressive enhancement: the .reveal class (which hides the
+// element) is only added by JS, so without JS or with reduced motion everything
+// stays visible. The CSS hiding lives inside a prefers-reduced-motion guard.
+(function(){
+  const els=[...document.querySelectorAll('.sec-head,.card,.feature,.term,.tbl-wrap,.mode,.appcard')];
+  els.forEach(el=>el.classList.add('reveal'));
+  if(!('IntersectionObserver' in window)){els.forEach(el=>el.classList.add('in'));return;}
+  const io=new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
+  },{threshold:.12, rootMargin:'0px 0px -8% 0px'});
+  els.forEach(el=>io.observe(el));
+})();
+</script>
+</body>
+</html>
