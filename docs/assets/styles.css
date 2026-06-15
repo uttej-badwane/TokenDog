@@ -57,7 +57,6 @@ header.nav.scrolled{border-bottom:1px solid var(--line)}
 @media(max-width:880px){.cta-row{justify-content:center}}
 .hero .art{display:flex;justify-content:center}
 .hero .art img{width:min(380px,82vw)}
-.float{animation:float 7s ease-in-out infinite}
 @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
 
 /* copy command */
@@ -154,3 +153,28 @@ footer .brand span{font-size:18px}
 footer .links{display:flex;gap:22px}
 footer .links a:hover{color:var(--clay)}
 footer .tag{width:100%;text-align:center;color:var(--ink-2);font-size:14px;border-top:1px solid var(--line);padding-top:20px;margin-top:8px;font-style:italic;font-family:var(--serif)}
+
+/* ── Motion (respects prefers-reduced-motion) ───────────────────────────── */
+@media (prefers-reduced-motion: no-preference){
+  .reveal{opacity:0;transform:translateY(18px);transition:opacity .7s cubic-bezier(.16,.84,.44,1),transform .7s cubic-bezier(.16,.84,.44,1)}
+  .reveal.in{opacity:1;transform:none}
+  .grid>.reveal:nth-child(2),.apps>.reveal:nth-child(2),.two>.reveal:nth-child(2){transition-delay:.08s}
+  .grid>.reveal:nth-child(3){transition-delay:.16s}
+  .grid>.reveal:nth-child(4){transition-delay:.24s}
+  .grid>.reveal:nth-child(5){transition-delay:.32s}
+  .grid>.reveal:nth-child(6){transition-delay:.40s}
+
+  /* hero entrance */
+  .hero .copy>*{animation:rise .85s cubic-bezier(.16,.84,.44,1) both}
+  .hero .copy>*:nth-child(2){animation-delay:.07s}
+  .hero .copy>*:nth-child(3){animation-delay:.14s}
+  .hero .copy>*:nth-child(4){animation-delay:.21s}
+  .hero .copy>*:nth-child(5){animation-delay:.28s}
+  .hero .art img{animation:rise .9s cubic-bezier(.16,.84,.44,1) both, float 7s ease-in-out 1.1s infinite}
+  @keyframes rise{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
+
+  /* terracotta underline that draws in under hero/section emphasis words */
+  .hero h1 em, .sec-head h2 em, .feature h2 em{background-image:linear-gradient(var(--terracotta),var(--terracotta));background-repeat:no-repeat;background-position:0 100%;background-size:0% 2px;transition:background-size .6s .5s ease}
+  .hero h1 em{background-size:100% 2px}
+  .sec-head.in h2 em, .feature.in h2 em{background-size:100% 2px}
+}

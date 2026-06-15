@@ -37,17 +37,17 @@ func wrapICO(png []byte, size int) []byte {
 	}
 	var b bytes.Buffer
 	w := func(v any) { _ = binary.Write(&b, binary.LittleEndian, v) }
-	w(uint16(0))         // reserved
-	w(uint16(1))         // type: icon
-	w(uint16(1))         // image count
-	b.WriteByte(dim)     // width
-	b.WriteByte(dim)     // height
-	b.WriteByte(0)       // palette size (0 = none)
-	b.WriteByte(0)       // reserved
-	w(uint16(1))         // color planes
-	w(uint16(32))        // bits per pixel
-	w(uint32(len(png)))  // image data size
-	w(uint32(6 + 16))    // offset to image data
+	w(uint16(0))        // reserved
+	w(uint16(1))        // type: icon
+	w(uint16(1))        // image count
+	b.WriteByte(dim)    // width
+	b.WriteByte(dim)    // height
+	b.WriteByte(0)      // palette size (0 = none)
+	b.WriteByte(0)      // reserved
+	w(uint16(1))        // color planes
+	w(uint16(32))       // bits per pixel
+	w(uint32(len(png))) // image data size
+	w(uint32(6 + 16))   // offset to image data
 	b.Write(png)
 	return b.Bytes()
 }

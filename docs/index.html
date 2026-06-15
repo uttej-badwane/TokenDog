@@ -193,14 +193,14 @@ Cost saved:         <span class="g">$0.19</span> <span class="dim">(per-model ra
     </div>
     <div class="apps">
       <div class="appcard">
-        <div class="mb"><img src="assets/badge.png" alt=""><span>$2.40 today</span></div>
+        <div class="mb"><img src="assets/menubar-glyph.png" alt=""><span>$2.40 today</span></div>
         <h3>macOS — native menu bar</h3>
         <p>Swift/AppKit app backed by <code>td spend --json</code>. Toggle launch-at-login from the menu.</p>
         <pre>cd macos/TokenDogBar
 ./build.sh --install</pre>
       </div>
       <div class="appcard">
-        <div class="mb"><img src="assets/badge.png" alt=""><span>$2.40 today</span></div>
+        <div class="mb"><img src="assets/menubar-glyph.png" alt=""><span>$2.40 today</span></div>
         <h3>Windows &amp; Linux — system tray</h3>
         <p>Cross-platform Go companion polling the same contract every 60s. Isolated cgo module.</p>
         <pre>cd tray
@@ -260,6 +260,19 @@ function copyCmd(){
 }
 const nav=document.getElementById('nav');
 addEventListener('scroll',()=>nav.classList.toggle('scrolled',scrollY>8));
+
+// Scroll-reveal — progressive enhancement: the .reveal class (which hides the
+// element) is only added by JS, so without JS or with reduced motion everything
+// stays visible. The CSS hiding lives inside a prefers-reduced-motion guard.
+(function(){
+  const els=[...document.querySelectorAll('.sec-head,.card,.feature,.term,.tbl-wrap,.mode,.appcard')];
+  els.forEach(el=>el.classList.add('reveal'));
+  if(!('IntersectionObserver' in window)){els.forEach(el=>el.classList.add('in'));return;}
+  const io=new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
+  },{threshold:.12, rootMargin:'0px 0px -8% 0px'});
+  els.forEach(el=>io.observe(el));
+})();
 </script>
 </body>
 </html>
