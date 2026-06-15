@@ -110,11 +110,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // logs; savings only from traffic that passed through TD. Spending today
         // with ~zero savings means TD isn't intercepting.
         if r.spend.today > 0.05 && r.saved.today < 0.005 {
-            addStatus("Not capturing today’s traffic", color: .systemOrange)
+            addStatus("Not capturing today’s traffic", warn: true)
             addFootnote("run `td setup` to route Claude through TokenDog")
             menu.addItem(.separator())
         } else if r.saved.today > 0 {
-            addStatus("Capturing via TokenDog", color: .systemGreen)
+            addStatus("Capturing via TokenDog", warn: false)
             menu.addItem(.separator())
         }
 
@@ -154,68 +154,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // MARK: - Menu item builders
+    //
+    // Info rows are rendered as custom views, not item titles. AppKit dims the
+    // (attributed)Title of a disabled menu item regardless of the colour set,
+    // which is what made the dropdown hard to read; an NSTextField inside a view
+    // renders at exactly the colour we give it.
 
-    /// Tab stop where the value column begins. Wide enough for the longest label.
-    private static let valueColumn: CGFloat = 168
+    private static let rowWidth: CGFloat = 320
+    private static let leftInset: CGFloat = 16
+    private static let valueX: CGFloat = 184
 
-    /// A non-interactive two-column row: a medium-weight label and a bold,
-    /// monospaced-digit value aligned in a column. Rendered via attributedTitle
-    /// with explicit colours so it reads at full contrast instead of the dim
-    /// disabled-grey AppKit applies to plain disabled items.
+    /// A two-column row: label on the left, a bold monospaced value aligned in a
+    /// fixed column on the right. Both at full contrast.
     private func addInfo(_ label: String, _ value: String) {
-        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        item.isEnabled = false
-
-        let para = NSMutableParagraphStyle()
-        para.tabStops = [NSTextTab(textAlignment: .left, location: Self.valueColumn)]
-
-        let s = NSMutableAttributedString(string: label, attributes: [
-            .font: NSFont.systemFont(ofSize: 13, weight: .regular),
-            .foregroundColor: NSColor.secondaryLabelColor,
-            .paragraphStyle: para,
-        ])
+        let row = NSView(frame: NSRect(x: 0, y: 0, width: Self.rowWidth, height: 22))
+        let lbl = Self.field(label, font: .systemFont(ofSize: 13), color: .labelColor)
+        lbl.frame = NSRect(x: Self.leftInset, y: 3, width: Self.valueX - Self.leftInset - 8, height: 16)
+        row.addSubview(lbl)
         if !value.isEmpty {
-            s.append(NSAttributedString(string: "\t" + value, attributes: [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold),
-                .foregroundColor: NSColor.labelColor,
-                .paragraphStyle: para,
-            ]))
+            let val = Self.field(value, font: .monospacedDigitSystemFont(ofSize: 13, weight: .semibold), color: .labelColor)
+            val.frame = NSRect(x: Self.valueX, y: 3, width: Self.rowWidth - Self.valueX - 14, height: 16)
+            row.addSubview(val)
         }
-        item.attributedTitle = s
-        menu.addItem(item)
+        addViewItem(row)
     }
 
-    /// A small uppercase section label — readable, not faint.
+    /// A small uppercase section label in the brand accent (Terracotta) — the
+    /// same treatment the website gives its section kickers.
     private func addHeader(_ text: String) {
-        let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        item.attributedTitle = NSAttributedString(string: text, attributes: [
-            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
-            .foregroundColor: NSColor.secondaryLabelColor,
-            .kern: 0.8,
-        ])
-        menu.addItem(item)
+        addTextRow(text, font: .systemFont(ofSize: 11, weight: .semibold),
+                   color: .tdTerracotta, height: 24, topPad: 6)
     }
 
-    /// A small dimmed note line.
+    /// A small, quieter note line.
     private func addFootnote(_ text: String) {
-        let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        item.attributedTitle = NSAttributedString(string: text, attributes: [
-            .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.secondaryLabelColor,
-        ])
-        menu.addItem(item)
+        addTextRow(text, font: .systemFont(ofSize: 11), color: .secondaryLabelColor)
     }
 
-    /// A coloured status line (capture state) with a leading dot.
-    private func addStatus(_ text: String, color: NSColor) {
-        let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        item.attributedTitle = NSAttributedString(string: "● \(text)", attributes: [
-            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-            .foregroundColor: color,
-        ])
+    /// Capture-status row: a Terracotta dot, with the text accented in Terracotta
+    /// when it's a warning (not capturing) and neutral Ink/Bone when all's well.
+    private func addStatus(_ text: String, warn: Bool) {
+        let row = NSView(frame: NSRect(x: 0, y: 0, width: Self.rowWidth, height: 22))
+        let dot = Self.field("●", font: .systemFont(ofSize: 11), color: .tdTerracotta)
+        dot.frame = NSRect(x: Self.leftInset, y: 4, width: 14, height: 14)
+        row.addSubview(dot)
+        let f = Self.field(text, font: .systemFont(ofSize: 12, weight: warn ? .semibold : .regular),
+                           color: warn ? .tdTerracotta : .labelColor)
+        f.frame = NSRect(x: Self.leftInset + 17, y: 3, width: Self.rowWidth - Self.leftInset - 30, height: 16)
+        row.addSubview(f)
+        addViewItem(row)
+    }
+
+    /// A single full-width text row (header / footnote / status).
+    private func addTextRow(_ s: String, font: NSFont, color: NSColor, height: CGFloat = 20, topPad: CGFloat = 0) {
+        let row = NSView(frame: NSRect(x: 0, y: 0, width: Self.rowWidth, height: height))
+        let f = Self.field(s, font: font, color: color)
+        f.frame = NSRect(x: Self.leftInset, y: (height - 16) / 2 - topPad / 2,
+                         width: Self.rowWidth - Self.leftInset - 12, height: 16)
+        row.addSubview(f)
+        addViewItem(row)
+    }
+
+    /// A non-editable, transparent label field.
+    private static func field(_ s: String, font: NSFont, color: NSColor) -> NSTextField {
+        let f = NSTextField(labelWithString: s)
+        f.font = font
+        f.textColor = color
+        f.lineBreakMode = .byTruncatingTail
+        return f
+    }
+
+    private func addViewItem(_ view: NSView) {
+        let item = NSMenuItem()
+        item.view = view
         menu.addItem(item)
     }
 
@@ -240,4 +251,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func quit() { NSApp.terminate(nil) }
+}
+
+// TokenDog brand palette. Terracotta is the brand fill / accent; Clay its
+// pressed/deeper variant. Body text uses the system label colours, which map to
+// near-Ink on light and near-Bone on dark — the brand's own neutrals.
+extension NSColor {
+    static let tdTerracotta = NSColor(srgbRed: 193 / 255.0, green: 94 / 255.0, blue: 60 / 255.0, alpha: 1)
+    static let tdClay = NSColor(srgbRed: 169 / 255.0, green: 78 / 255.0, blue: 48 / 255.0, alpha: 1)
 }
