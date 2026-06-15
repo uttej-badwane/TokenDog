@@ -5,6 +5,15 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-06-14
+
+### Added
+- **Brand identity + marketing website.** A complete brand kit (`brand/`) — a vintage engraved Samoyed on warm terracotta, with a portrait mark and a bone-ring badge, full light/dark variants, social/OG cards, SVG wordmarks and lockups, and a documented palette (Terracotta `#C15E3C`, Clay `#A94E30`, Bone `#ECE6D7`, Warm White `#F4EFE4`, Ink `#2A2521`). A static GitHub Pages site (`docs/`) is built on that kit — warm-paper surfaces with a serif display face over an Inter UI, strict light/dark editorial alternation, the `td gain` demo, filter table, deployment modes, and desktop-app sections — deployable from `main` `/docs` (relative paths, so it's portable to a dedicated Pages repo). Tasteful scroll-reveal and hero-entrance animation, all gated behind `prefers-reduced-motion`.
+- **Brand icons in the desktop apps.** The macOS menu bar (`macos/TokenDogBar`) now shows a flat badge glyph beside the spend figure instead of an emoji — a simplified mark (`brand/menubar-glyph.svg`) that stays legible at 16–22px where the engraved portrait softens; `build.sh` bundles it as a Resource. The Windows/Linux tray icon (`tray/icon`) is regenerated from the brand badge, and `tray/icon/generate.go` now wraps the brand PNG into the Windows ICO container.
+
+### Changed
+- **README leads with the brand.** The ASCII-art masthead is replaced by the horizontal logo lockup banner, plus a website badge/link.
+
 ## [0.14.0] - 2026-06-14
 
 ### Changed
