@@ -50,6 +50,9 @@
         <span class="dollar">$</span><span id="cmdtext">brew install uttej-badwane/tokendog/tokendog</span>
         <button onclick="copyCmd()" id="copybtn">copy</button>
       </div>
+      <a class="dlstat" id="dlstat" href="https://github.com/uttej-badwane/TokenDog/releases" target="_blank" rel="noopener" aria-live="polite" hidden>
+        <span class="dot" aria-hidden="true"></span><strong id="dlcount"></strong>&nbsp;downloads and counting
+      </a>
     </div>
     <div class="art">
       <img class="float" src="assets/badge.png" alt="TokenDog — engraved Samoyed badge">
@@ -260,6 +263,27 @@ function copyCmd(){
 }
 const nav=document.getElementById('nav');
 addEventListener('scroll',()=>nav.classList.toggle('scrolled',scrollY>8));
+
+// Live download counter — sums release-asset downloads from the GitHub API
+// (brew-tap installs pull the same assets, so this counts them too). Cached in
+// localStorage for 6h to stay well under the unauthenticated rate limit. The
+// element is hidden by default, so a rate-limited/failed fetch shows nothing.
+(function(){
+  const el=document.getElementById('dlstat'), num=document.getElementById('dlcount');
+  if(!el||!num) return;
+  const KEY='td-dl-count', TTL=6*3600e3;
+  const show=n=>{ num.textContent=n.toLocaleString(); el.hidden=false; };
+  try{ const c=JSON.parse(localStorage.getItem(KEY)||'null');
+       if(c && Number.isFinite(c.n) && Date.now()-c.t<TTL){ show(c.n); return; } }catch(e){}
+  fetch('https://api.github.com/repos/uttej-badwane/TokenDog/releases?per_page=100',
+        {headers:{Accept:'application/vnd.github+json'}})
+    .then(r=>r.ok?r.json():Promise.reject(r.status))
+    .then(rel=>{
+      const n=rel.reduce((s,r)=>s+(r.assets||[]).reduce((a,x)=>a+(x.download_count||0),0),0);
+      if(n>0){ show(n); try{localStorage.setItem(KEY,JSON.stringify({n,t:Date.now()}));}catch(e){} }
+    })
+    .catch(()=>{});
+})();
 
 // Scroll-reveal — progressive enhancement: the .reveal class (which hides the
 // element) is only added by JS, so without JS or with reduced motion everything

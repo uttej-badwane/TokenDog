@@ -64,6 +64,12 @@ header.nav.scrolled{border-bottom:1px solid var(--line)}
 .cmd .dollar{color:var(--terracotta);user-select:none}
 .cmd button{margin-left:auto;background:transparent;border:1px solid var(--line-dark);color:var(--bone);border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:var(--mono)}
 .cmd button:hover{background:var(--line-dark)}
+.dlstat{margin-top:16px;display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:13px;letter-spacing:.02em;color:var(--ink-2);text-decoration:none}
+.dlstat strong{color:var(--ink);font-weight:600}
+.dlstat:hover strong{color:var(--clay)}
+.dlstat .dot{width:7px;height:7px;border-radius:50%;background:#3fb950;flex:none;animation:dlpulse 2.4s ease-out infinite}
+@keyframes dlpulse{0%{box-shadow:0 0 0 0 rgba(63,185,80,.5)}70%{box-shadow:0 0 0 6px rgba(63,185,80,0)}100%{box-shadow:0 0 0 0 rgba(63,185,80,0)}}
+@media (prefers-reduced-motion:reduce){.dlstat .dot{animation:none}}
 
 /* trust bar */
 .trust{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--bone)}
