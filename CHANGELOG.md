@@ -5,6 +5,23 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-07-02
+
+### Changed
+- **`td statusline` renders TokenDog's own status line — no external dependency.** Instead of only capturing cost (and optionally wrapping a third-party status-line tool), `td statusline` now renders a self-contained line itself: directory, git branch, model, context usage, and cost (e.g. `TokenDog (main)  Opus 4.8 high  8% ctx  $2.10`). Git branch is read straight from `.git` (no subprocess), context usage is traffic-lit (red past 80% or on `exceeds_200k_tokens`), and `NO_COLOR` is honored. `td setup` now points `statusLine` at `td statusline` (backing up any prior `statusLine` for `td unsetup` to restore); `--wrap '<cmd>'` remains as a generic escape hatch for users who prefer their own command while still capturing the cost.
+
+## [0.17.0] - 2026-07-01
+
+### Fixed
+- **Opus pricing was ~3× too high.** `claude-opus-4-7`/`4-6` carried old Opus-4.0/4.1 rates (`$15`/`$75`/`$1.50`/`$18.75`), but Opus 4.5+ is `$5`/`$25`/`$0.50`/`$6.25` per MTok — and `claude-opus-4-8` was missing entirely, so it fell back to the inflated 4-7 default. Every Opus session priced ~3× its real cost, which made `td spend` and the menu bar disagree with Claude Code's `/cost` by that factor. Corrected the 4-6/4-7 rates, added `claude-opus-4-8` (1M-context tier `$10`/`$37.50`, matching the Sonnet 4.6 2×-in/1.5×-out convention), and moved `DefaultModel` to `claude-opus-4-8`.
+
+### Added
+- **Capture Claude Code's own session cost.** A new `td statusline` command reads the JSON Claude Code pipes to a `statusLine` on stdin and records each session's `cost.total_cost_usd` — the figure `/cost` and `/usage` show — to `~/.config/tokendog/session-costs.jsonl` (append-only, lock-free across concurrent windows, deduped to the max cost per session). `td spend` then re-prices captured sessions to Claude Code's number by scaling their token-priced rows, so day/model/token buckets stay proportional and spend/the menu bar match `/cost` for those sessions instead of relying on token pricing alone. `td setup`/`td unsetup` wire it into `~/.claude/settings.json`.
+- **Release-download counter.** A GitHub release-downloads badge in the README, plus a live download count on the website fetched from the GitHub API (cached client-side, degrades silently under rate limits).
+
+### Changed
+- **macOS menu-bar readability.** Title-case section headers (Spend / Today by Model / TokenDog Savings) and high-contrast, view-based rows in the brand palette.
+
 ## [0.16.0] - 2026-06-15
 
 ### Added
