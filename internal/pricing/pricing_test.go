@@ -10,8 +10,8 @@ func TestLookupExact(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ok=true for known model")
 	}
-	if r.InputPerM != 15.0 {
-		t.Errorf("InputPerM = %v, want 15.0", r.InputPerM)
+	if r.InputPerM != 5.0 {
+		t.Errorf("InputPerM = %v, want 5.0", r.InputPerM)
 	}
 }
 
@@ -50,16 +50,16 @@ func TestLookupUnknownFallsBackWithFalse(t *testing.T) {
 func TestUSDForInput(t *testing.T) {
 	r, _ := Lookup("claude-opus-4-7")
 	got := r.USDForInput(1_000_000)
-	if got != 15.0 {
-		t.Errorf("USDForInput(1M) = %v, want 15.0", got)
+	if got != 5.0 {
+		t.Errorf("USDForInput(1M) = %v, want 5.0", got)
 	}
 }
 
 func TestUSDForInput1MFallback(t *testing.T) {
-	// claude-opus-4-6 has no separate 1M-tier price; should fall back to standard.
-	r, _ := Lookup("claude-opus-4-6")
+	// claude-sonnet-4-5 has no separate 1M-tier price; should fall back to standard.
+	r, _ := Lookup("claude-sonnet-4-5")
 	if r.Input1MPerM != 0 {
-		t.Skip("claude-opus-4-6 now has 1M tier; rewrite this test")
+		t.Skip("claude-sonnet-4-5 now has 1M tier; rewrite this test")
 	}
 	got := r.USDForInput1M(1_000_000)
 	if got != r.InputPerM {

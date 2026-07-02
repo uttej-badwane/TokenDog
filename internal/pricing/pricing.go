@@ -10,7 +10,7 @@
 //   - https://aws.amazon.com/bedrock/pricing/
 //   - https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json
 //
-// Last verified: 2026-06. Update DataVersion when prices change so callers
+// Last verified: 2026-06-30. Update DataVersion when prices change so callers
 // can detect stale embedded data.
 package pricing
 
@@ -22,7 +22,7 @@ import (
 
 // DataVersion ticks on each pricing update. Useful for cache invalidation
 // and for `td gain` to footnote when its pricing data was last touched.
-const DataVersion = "2026-06-02"
+const DataVersion = "2026-06-30"
 
 // Rate holds per-million-token costs for a single model. Output rates are
 // not used by td gain (tool-result data flows in as input on subsequent
@@ -40,21 +40,34 @@ type Rate struct {
 // rates holds the embedded pricing snapshot. Keys are canonical model ids
 // matching what Anthropic's `message.model` field reports in transcripts.
 var rates = map[string]Rate{
+	// Opus 4.6/4.7/4.8 all price at $5/$25 standard. The >200K "1M-context"
+	// tier is 2x input / 1.5x output, matching the Sonnet 4.6 convention below.
+	"claude-opus-4-8": {
+		Model:          "claude-opus-4-8",
+		InputPerM:      5.0,
+		OutputPerM:     25.0,
+		Input1MPerM:    10.0,
+		Output1MPerM:   37.50,
+		CacheReadPerM:  0.50,
+		CacheWritePerM: 6.25,
+	},
 	"claude-opus-4-7": {
 		Model:          "claude-opus-4-7",
-		InputPerM:      15.0,
-		OutputPerM:     75.0,
-		Input1MPerM:    30.0,
-		Output1MPerM:   150.0,
-		CacheReadPerM:  1.50,
-		CacheWritePerM: 18.75,
+		InputPerM:      5.0,
+		OutputPerM:     25.0,
+		Input1MPerM:    10.0,
+		Output1MPerM:   37.50,
+		CacheReadPerM:  0.50,
+		CacheWritePerM: 6.25,
 	},
 	"claude-opus-4-6": {
 		Model:          "claude-opus-4-6",
-		InputPerM:      15.0,
-		OutputPerM:     75.0,
-		CacheReadPerM:  1.50,
-		CacheWritePerM: 18.75,
+		InputPerM:      5.0,
+		OutputPerM:     25.0,
+		Input1MPerM:    10.0,
+		Output1MPerM:   37.50,
+		CacheReadPerM:  0.50,
+		CacheWritePerM: 6.25,
 	},
 	"claude-sonnet-4-6": {
 		Model:          "claude-sonnet-4-6",
@@ -199,10 +212,9 @@ func LookupFor(provider, model string) (Rate, bool) {
 
 // DefaultModel is the fallback when an analytics record has no model tag —
 // either because it pre-dates per-model attribution or because the
-// transcript wasn't reachable. Opus 4.7 errs on the side of overstating
-// cost (vs. understating with Haiku), making "saved cost" estimates
-// conservative-low rather than speculatively high.
-const DefaultModel = "claude-opus-4-7"
+// transcript wasn't reachable. Opus is the dominant agentic model, so its
+// rate is the conservative choice for an unknown Anthropic record.
+const DefaultModel = "claude-opus-4-8"
 
 // resolveKey maps a model id to a canonical key in the rate table. Matches by
 // exact id first, then by LONGEST prefix (so versioned ids like
