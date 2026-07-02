@@ -59,7 +59,7 @@ func init() {
 }
 
 func runSetup(_ *cobra.Command, _ []string) error {
-	fmt.Println("TokenDog setup — six steps. Re-runnable, idempotent.")
+	fmt.Println("TokenDog setup — seven steps. Re-runnable, idempotent.")
 	fmt.Println()
 
 	// Step 1: cert
@@ -116,11 +116,17 @@ func runSetup(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Step 6: verify
-	if err := setupStep(6, "Verify proxy interception with a synthetic request", verifyProxy); err != nil {
+	// Step 6: capture Claude Code's own cost via the statusLine (wraps any
+	// existing statusline command so its display is preserved). Non-fatal.
+	if err := setupStep(6, "Wire statusLine to capture Claude Code's session cost", installStatusLine); err != nil {
+		fmt.Printf("  (skipping statusLine wiring: %v)\n", err)
+	}
+
+	// Step 7: verify
+	if err := setupStep(7, "Verify proxy interception with a synthetic request", verifyProxy); err != nil {
 		// Verify failure isn't fatal — it can mean the daemon hasn't
 		// finished starting. We surface the issue but don't unwind the
-		// other 5 steps.
+		// other steps.
 		fmt.Printf("  (verify failed: %v — give the daemon ~5s to start and run `td proxy daemon status`)\n", err)
 	}
 
@@ -475,6 +481,9 @@ func runUnsetup(_ *cobra.Command, _ []string) error {
 	}); err != nil {
 		return err
 	}
+
+	// Non-fatal: restore the user's original statusLine (or drop ours).
+	_ = setupStep(5, "Restore your statusLine (unwrap TokenDog cost capture)", removeStatusLine)
 
 	fmt.Println()
 	fmt.Println("Done. Open a new shell so HTTPS_PROXY clears, then restart Claude Code.")

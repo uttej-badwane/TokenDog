@@ -8,7 +8,15 @@ import (
 	"time"
 
 	"tokendog/internal/pricing"
+	"tokendog/internal/sessioncost"
 )
+
+// isolateSessionCosts points the captured-cost store at an empty temp file so
+// computeSpend/Compute don't read (or compact) the real ~/.config store.
+func isolateSessionCosts(t *testing.T) {
+	t.Helper()
+	t.Setenv("TD_SESSION_COSTS", filepath.Join(t.TempDir(), "session-costs.jsonl"))
+}
 
 // writeTranscript writes a single-line transcript with one finalized usage row
 // at the given time, using a known model. Each row carries a stop_reason so the
@@ -27,6 +35,7 @@ func TestComputeSpendBuckets(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TD_CLAUDE_PROJECTS", dir)
 	t.Setenv("TD_SPEND_CACHE", filepath.Join(t.TempDir(), "cache.json"))
+	isolateSessionCosts(t)
 
 	now := time.Now()
 	model := "claude-opus-4-7"
@@ -78,6 +87,7 @@ func TestComputeReport(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TD_CLAUDE_PROJECTS", dir)
 	t.Setenv("TD_SPEND_CACHE", filepath.Join(t.TempDir(), "cache.json"))
+	isolateSessionCosts(t)
 	writeTranscript(t, dir, "a.jsonl", "claude-opus-4-7", time.Now(), 1_000_000, 0, 0, 0)
 
 	rep, err := Compute("test-1.2.3")
@@ -177,4 +187,33 @@ func almostEqual(a, b float64) bool {
 		d = -d
 	}
 	return d < 1e-6
+}
+
+// A session with a captured cost.total_cost_usd is re-priced to Claude Code's
+// figure, overriding TokenDog's token pricing.
+func TestCapturedCostOverridesTokenPricing(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TD_CLAUDE_PROJECTS", dir)
+	t.Setenv("TD_SPEND_CACHE", filepath.Join(t.TempDir(), "cache.json"))
+	isolateSessionCosts(t)
+
+	now := time.Now()
+	sid := "11111111-2222-3333-4444-555555555555"
+	// 1M input tokens on Opus 4.8 token-prices to $5.00.
+	writeTranscript(t, dir, sid+".jsonl", "claude-opus-4-8", now, 1_000_000, 0, 0, 0)
+	// Claude Code's own number for this session is $2.10 — this must win.
+	if err := sessioncost.Append(sessioncost.Sample{SessionID: sid, CostUSD: 2.10, UpdatedAt: now}); err != nil {
+		t.Fatalf("append captured: %v", err)
+	}
+
+	block, err := computeSpend(now)
+	if err != nil {
+		t.Fatalf("computeSpend: %v", err)
+	}
+	if !almostEqual(block.Today, 2.10) {
+		t.Errorf("today = %.4f, want 2.10 (captured overrides $5.00 token price)", block.Today)
+	}
+	if !almostEqual(block.Lifetime, 2.10) {
+		t.Errorf("lifetime = %.4f, want 2.10", block.Lifetime)
+	}
 }

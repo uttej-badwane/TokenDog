@@ -19,6 +19,7 @@ import (
 
 	"tokendog/internal/analytics"
 	"tokendog/internal/pricing"
+	"tokendog/internal/sessioncost"
 	"tokendog/internal/transcript"
 )
 
@@ -134,6 +135,16 @@ func computeSpend(now time.Time) (SpendBlock, error) {
 	dayStart := startOfDay(now)
 	monthStart := startOfMonth(now)
 
+	// Claude Code's own per-session cost (cost.total_cost_usd, the /cost number),
+	// captured via the statusLine shim. When present for a session it is
+	// authoritative: we scale that session's token-priced rows so the session
+	// sums to Claude Code's figure while day/model/token buckets stay
+	// proportionally intact. Empty (no shim installed yet) ⇒ pure token pricing.
+	captured, _ := sessioncost.Load()
+	if len(captured) > 0 {
+		_ = sessioncost.Compact() // bound the append-only log; best-effort
+	}
+
 	// Parsed rows are served from a disk cache keyed by each file's size+modtime,
 	// so repeated invocations (the menu bar polls on a timer) re-parse only the
 	// transcripts that actually changed instead of the whole tree.
@@ -156,8 +167,21 @@ func computeSpend(now time.Time) (SpendBlock, error) {
 		if err != nil {
 			return nil // one bad transcript shouldn't sink the total
 		}
+		// The transcript filename is the session id; if Claude Code captured a
+		// cost for it, derive a scale factor from this session's token-priced
+		// total so its rows re-price to Claude Code's authoritative number.
+		factor := 1.0
+		if s, ok := captured[strings.TrimSuffix(d.Name(), ".jsonl")]; ok {
+			var tokenTotal float64
+			for _, e := range entries {
+				tokenTotal += priceEntry(e)
+			}
+			if tokenTotal > 0 {
+				factor = s.CostUSD / tokenTotal
+			}
+		}
 		for _, e := range entries {
-			cost := priceEntry(e)
+			cost := priceEntry(e) * factor
 			block.Lifetime += cost
 			if e.Timestamp.IsZero() {
 				continue // counts toward lifetime, but no day/month bucket
