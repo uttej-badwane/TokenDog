@@ -47,6 +47,7 @@ Cost saved:         $0.19 (per-model rates, cl100k)
 | 🔌 **Two ways in** | the MITM proxy (zero client config) **or** `td gateway` — explicit `base_url`, **no CA cert** (security-team friendly) |
 | 🧪 **Proven quality** | `td eval` shows *deterministically* that no answer-bearing fact is ever dropped — numbers, not vibes |
 | 📊 **Honest measurement** | `td gain` prices real per-model/per-provider savings; `td replay` runs the counterfactual on **your** history |
+| 💵 **`/cost`-accurate spend** | `td statusline` renders your status line and captures Claude Code's own per-session cost, so `td spend` and the menu bar match `/cost` exactly |
 | 🏢 **Fleet-ready** | opt-in aggregate reporting (no content leaves the box) + centrally-managed policy for platform teams |
 
 ## ⚡ Quick start
@@ -346,6 +347,31 @@ Prices Claude Code's local usage logs (`~/.claude/projects/**/*.jsonl`) with
 TokenDog's per-model rates — **no ccusage, no network**. Shows the savings TD
 clawed back alongside, so you see both the bill and the discount. This is the
 data source behind the [macOS menu bar](#-macos-menu-bar).
+
+When `td statusline` is wired up (below), spend uses **Claude Code's own
+per-session cost** for those sessions — the same figure `/cost` shows — instead
+of TokenDog's token-priced estimate, so the numbers match `/cost` exactly.
+
+### `td statusline` — TokenDog's status line, and `/cost`-accurate spend
+
+```bash
+# ~/.claude/settings.json  (td setup writes this for you)
+"statusLine": { "type": "command", "command": "td statusline" }
+```
+
+Renders a compact status line from the JSON Claude Code pipes on stdin —
+directory, git branch, model, context usage, and cost:
+
+```console
+TokenDog (main)  Opus 4.8 high  8% ctx  $2.10
+```
+
+Self-contained: git branch is read straight from `.git` (no subprocess), context
+usage is traffic-lit, and `NO_COLOR` is honored. While rendering, it records each
+session's `cost.total_cost_usd` — the number Claude Code itself computes for
+`/cost` — so `td spend` and the menu bar can report Claude Code's own figures.
+Prefer your own status line? `td statusline --wrap '<your command>'` runs it with
+the same stdin while still capturing the cost.
 
 ### `td replay` — counterfactual: "what if I'd had td running all year?"
 
