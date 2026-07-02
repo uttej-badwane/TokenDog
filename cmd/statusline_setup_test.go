@@ -21,15 +21,15 @@ func readStatusLine(t *testing.T, home string) map[string]any {
 	return sl
 }
 
-func TestInstallStatusLineWrapsAndRestores(t *testing.T) {
+func TestInstallStatusLineReplacesAndRestores(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	claudeDir := filepath.Join(home, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Existing ccstatusline config with an extra field to preserve.
-	orig := `{"statusLine":{"type":"command","command":"npx -y ccstatusline@latest","refreshInterval":10},"model":"opus"}`
+	// A pre-existing custom statusLine with an extra field to preserve.
+	orig := `{"statusLine":{"type":"command","command":"my-statusline --foo","refreshInterval":10},"model":"opus"}`
 	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(orig), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -38,27 +38,27 @@ func TestInstallStatusLineWrapsAndRestores(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 	sl := readStatusLine(t, home)
-	if got := sl["command"].(string); got != "td statusline --wrap 'npx -y ccstatusline@latest'" {
-		t.Errorf("wrapped command = %q", got)
+	if got := sl["command"].(string); got != "td statusline" {
+		t.Errorf("command = %q, want 'td statusline'", got)
 	}
 	if sl["refreshInterval"].(float64) != 10 {
-		t.Error("refreshInterval not preserved through wrap")
+		t.Error("refreshInterval not preserved")
 	}
 
-	// Idempotent: a second install must not double-wrap.
+	// Idempotent: a second install is a no-op.
 	if _, err := installStatusLine(); err != nil {
 		t.Fatalf("install #2: %v", err)
 	}
-	if got := readStatusLine(t, home)["command"].(string); got != "td statusline --wrap 'npx -y ccstatusline@latest'" {
+	if got := readStatusLine(t, home)["command"].(string); got != "td statusline" {
 		t.Errorf("second install changed command to %q", got)
 	}
 
-	// Unsetup restores the original verbatim.
+	// Unsetup restores the prior statusLine verbatim.
 	if _, err := removeStatusLine(); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
 	sl = readStatusLine(t, home)
-	if got := sl["command"].(string); got != "npx -y ccstatusline@latest" {
+	if got := sl["command"].(string); got != "my-statusline --foo" {
 		t.Errorf("restored command = %q, want original", got)
 	}
 	if sl["refreshInterval"].(float64) != 10 {

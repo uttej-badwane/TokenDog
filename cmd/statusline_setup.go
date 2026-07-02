@@ -12,10 +12,8 @@ import (
 //
 // Claude Code pushes its own session cost (cost.total_cost_usd, the /cost
 // figure) to whatever single command is registered as `statusLine` in
-// settings.json. To capture it without disturbing an existing statusline (e.g.
-// ccstatusline), setup rewrites the command to run through `td statusline
-// --wrap '<original>'`: the shim records the cost, then runs the user's original
-// command with the same stdin so their display is unchanged. The original is
+// settings.json. Setup points that at `td statusline`, which renders
+// TokenDog's own status line and records the cost. Any prior statusLine is
 // backed up so unsetup can restore it verbatim.
 
 const tdStatuslineMarker = "td statusline"
@@ -36,12 +34,6 @@ func statuslineBackupPath() (string, error) {
 	return filepath.Join(home, ".config", "tokendog", "statusline-backup.json"), nil
 }
 
-// shellSingleQuote wraps s in single quotes for safe embedding in a `sh -c`
-// command string, escaping any embedded single quotes.
-func shellSingleQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
 // writeSettingsAtomic marshals settings and replaces path via temp+rename so a
 // partial write can't corrupt the file.
 func writeSettingsAtomic(path string, settings map[string]any) error {
@@ -56,8 +48,8 @@ func writeSettingsAtomic(path string, settings map[string]any) error {
 	return os.Rename(tmp, path)
 }
 
-// installStatusLine wires `td statusline` into settings.json, wrapping any
-// existing statusLine command so its output is preserved. Idempotent.
+// installStatusLine points settings.json's statusLine at `td statusline`,
+// backing up any prior statusLine so unsetup can restore it. Idempotent.
 func installStatusLine() (string, error) {
 	path, err := claudeSettingsPath()
 	if err != nil {
@@ -81,17 +73,18 @@ func installStatusLine() (string, error) {
 		return "statusLine already routes through td (skipping)", nil
 	}
 
-	// Build the replacement, preserving the user's other statusLine fields
-	// (type, padding, refreshInterval, …) so rendering is unchanged.
+	// Preserve the user's other statusLine fields (type, padding,
+	// refreshInterval, …); only the command changes to td statusline.
 	newSL := map[string]any{}
 	for k, v := range cur {
 		newSL[k] = v
 	}
 	newSL["type"] = "command"
+	newSL["command"] = "td statusline"
 
-	var msg string
+	msg := "registered td statusline"
 	if strings.TrimSpace(curCmd) != "" {
-		// Back up the original statusLine so unsetup can restore it exactly.
+		// Back up the prior statusLine so unsetup can restore it exactly.
 		if bp, err := statuslineBackupPath(); err == nil {
 			if _, statErr := os.Stat(bp); os.IsNotExist(statErr) { // don't overwrite a prior backup
 				if b, mErr := json.MarshalIndent(cur, "", "  "); mErr == nil {
@@ -100,11 +93,7 @@ func installStatusLine() (string, error) {
 				}
 			}
 		}
-		newSL["command"] = "td statusline --wrap " + shellSingleQuote(curCmd)
-		msg = "wrapped existing statusLine (" + curCmd + ") to capture Claude Code's cost"
-	} else {
-		newSL["command"] = "td statusline"
-		msg = "registered td statusline (no prior statusLine to wrap)"
+		msg = "registered td statusline (backed up your prior statusLine)"
 	}
 
 	settings["statusLine"] = newSL

@@ -1,12 +1,11 @@
 // Package transcript reads Claude Code's session transcript JSONL files and
-// extracts Anthropic-reported token usage. The format is what's described in
-// ccstatusline's reverse-engineering notes, modulo a few field-naming quirks
-// in real data (sessionId is camelCase, not snake_case).
+// extracts Anthropic-reported token usage. The on-disk format is undocumented
+// and reverse-engineered from real transcripts, with a few field-naming quirks
+// (sessionId is camelCase, not snake_case).
 //
-// We follow ccstatusline's streaming-aware deduplication rule from §3.2 of
-// those notes: when stop_reason is present, count only finalized rows plus
-// the latest unfinished one; otherwise count every row. Without this, mid-
-// stream partials get double-counted.
+// Deduplication is streaming-aware: when stop_reason is present, count only
+// finalized rows plus the latest unfinished one; otherwise count every row.
+// Without this, mid-stream partials get double-counted.
 package transcript
 
 import (
@@ -46,7 +45,7 @@ type Entry struct {
 	CacheRead     int // usage.cache_read_input_tokens
 }
 
-// line mirrors the shape ccstatusline parses with Zod. Fields we don't read
+// line is the subset of a transcript record we parse. Fields we don't read
 // (parentUuid, requestId, etc.) are ignored by encoding/json.
 type line struct {
 	Type              string `json:"type"`
