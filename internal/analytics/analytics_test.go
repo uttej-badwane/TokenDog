@@ -115,10 +115,10 @@ func TestSummarizePricesByProvider(t *testing.T) {
 	}
 
 	// Same tokens on a legacy (no provider) record stays at the Anthropic
-	// default — back-compat.
+	// default (Opus 4.8, $5/M input) — back-compat.
 	legacy := []Record{{Command: "proxy: x", RawTokens: 1_000_000, FilteredTokens: 0}}
 	sumL, _ := Summarize(legacy)
-	if sumL.USDSaved() < 14 {
-		t.Errorf("legacy record should price at Anthropic default (~$15), got $%.2f", sumL.USDSaved())
+	if usd := sumL.USDSaved(); usd < 4 || usd > 6 {
+		t.Errorf("legacy record should price at Anthropic default (~$5), got $%.2f", usd)
 	}
 }
