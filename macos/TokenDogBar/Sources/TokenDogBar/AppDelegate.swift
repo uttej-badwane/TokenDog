@@ -88,7 +88,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 addInfo("No Claude usage logs found", "")
                 addFootnote("Looked in ~/.claude/projects")
             }
-            buildHarnessSection()
             menu.addItem(.separator())
             addFootnote("Updated \(Ago.string(r.generatedAt))  ·  td \(r.tdVersion)")
         } else if let err = lastError {
@@ -100,10 +99,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             addInfo("Loading…", "")
         }
 
+        // Code Harness — always shown, with its own button, so auditing the
+        // Claude Code setup is one obvious click away regardless of state.
+        buildHarnessSection()
+
         menu.addItem(.separator())
         addAction("Refresh now", #selector(refresh), key: "r")
         addAction("Open full report…", #selector(openReport), key: "o")
-        addAction("Open Code Harness…", #selector(openHarness), key: "h")
 
         let login = NSMenuItem(title: "Launch at login", action: #selector(toggleLogin), keyEquivalent: "")
         login.target = self
@@ -165,28 +167,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// Code Harness summary: a health line plus the top few findings from
-    /// `td harness`. Renders nothing when the installed `td` is too old to
-    /// provide the command (lastHarness stays nil) so the section simply
-    /// disappears rather than showing an error.
+    /// Code Harness: a health line plus the top few findings from
+    /// `td harness`, and an always-present "Audit Code Config…" button that
+    /// opens the full audit in Terminal. When the last audit hasn't landed
+    /// yet (or the installed `td` predates the command), the summary rows are
+    /// skipped but the button stays so the audit is always reachable.
     private func buildHarnessSection() {
-        guard let h = lastHarness else { return }
         menu.addItem(.separator())
         addHeader("Code Harness")
 
-        if h.isClean {
-            addStatus("Setup looks healthy", warn: false)
+        if let h = lastHarness {
+            if h.isClean {
+                addStatus("Setup looks healthy", warn: false)
+            } else {
+                addStatus(h.headline, warn: h.summary.critical > 0)
+                // Findings arrive severity-sorted from td; show the top few.
+                for f in h.findings.prefix(3) {
+                    addInfo(f.shortFile, f.glyph)
+                    addFootnote(f.issue)
+                }
+                if h.summary.autoFixable > 0 {
+                    addFootnote("\(h.summary.autoFixable) auto-fixable · run `td harness apply`")
+                }
+            }
         } else {
-            addStatus(h.headline, warn: h.summary.critical > 0)
-            // Findings arrive severity-sorted from td; show the top few.
-            for f in h.findings.prefix(3) {
-                addInfo(f.shortFile, f.glyph)
-                addFootnote(f.issue)
-            }
-            if h.summary.autoFixable > 0 {
-                addFootnote("\(h.summary.autoFixable) auto-fixable · run `td harness apply`")
-            }
+            addFootnote("Audit your Claude Code setup for risky or stale config")
         }
+
+        // The button users look for — clear label, right beside the results.
+        addAction("Audit Code Config…", #selector(openHarness), key: "h")
     }
 
     // MARK: - Menu item builders
