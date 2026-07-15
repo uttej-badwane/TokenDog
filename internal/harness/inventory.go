@@ -374,8 +374,34 @@ func (c *collector) auditProjectMCP(root string) {
 	}
 	c.addItem(path, "mcp", "project", true, "")
 	servers, _ := cfg["mcpServers"].(map[string]any)
-	c.add(analyzeMCPServers(path, "project", servers, c.look)...)
+	c.add(analyzeMCPServers(path, "project", "", servers, c.look)...)
 	c.add(scanSecrets(path, "project", data)...)
+}
+
+// auditUserMCPJSON inventories ~/.claude/mcp.json — a user-scope MCP
+// config file (same mcpServers shape as a project's .mcp.json). Distinct
+// from ~/.claude.json (Claude Code's state file), which auditClaudeJSON
+// handles.
+func (c *collector) auditUserMCPJSON(claudeHome string) {
+	path := filepath.Join(claudeHome, "mcp.json")
+	data, tooBig, err := readCapped(path)
+	if err != nil || tooBig {
+		return
+	}
+	var cfg map[string]any
+	if jsonErr := json.Unmarshal(data, &cfg); jsonErr != nil {
+		c.addItem(path, "mcp", "user", false, jsonErr.Error())
+		c.add(Finding{
+			File: path, Scope: "user", Dimension: "mcp", Severity: SeverityWarning,
+			Issue: "not valid JSON — Claude Code will ignore these MCP servers",
+			Fix:   "repair the syntax (" + jsonErr.Error() + ")",
+		})
+		return
+	}
+	c.addItem(path, "mcp", "user", true, "")
+	servers, _ := cfg["mcpServers"].(map[string]any)
+	c.add(analyzeMCPServers(path, "user", "", servers, c.look)...)
+	c.add(scanSecrets(path, "user", data)...)
 }
 
 // auditClaudeJSON inspects ~/.claude.json — Claude Code's state file.
@@ -383,6 +409,12 @@ func (c *collector) auditProjectMCP(root string) {
 // mcpServers extraction) but deliberately do NOT secret-scan the whole
 // file: its history subtrees would drown the report in noise. The MCP
 // env check covers the part that matters.
+//
+// MCP servers live in two places here: a top-level mcpServers map
+// (global servers) and a per-project mcpServers block under
+// projects.<abs-path> (the servers `claude mcp add` writes for a given
+// directory). Both are evaluated; per-project servers are labelled with
+// their project path.
 func (c *collector) auditClaudeJSON(path string) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -399,8 +431,26 @@ func (c *collector) auditClaudeJSON(path string) {
 		return
 	}
 	c.addItem(path, "state", "user", true, "")
+
 	servers, _ := cfg["mcpServers"].(map[string]any)
-	c.add(analyzeMCPServers(path, "user", servers, c.look)...)
+	c.add(analyzeMCPServers(path, "user", "", servers, c.look)...)
+
+	// Per-project servers: projects.<abs-path>.mcpServers. Sorted by
+	// project path for deterministic output.
+	projects, _ := cfg["projects"].(map[string]any)
+	projPaths := make([]string, 0, len(projects))
+	for p := range projects {
+		projPaths = append(projPaths, p)
+	}
+	sort.Strings(projPaths)
+	for _, p := range projPaths {
+		pcfg, _ := projects[p].(map[string]any)
+		psrv, _ := pcfg["mcpServers"].(map[string]any)
+		if len(psrv) == 0 {
+			continue
+		}
+		c.add(analyzeMCPServers(path, "user", "project "+Tildify(p), psrv, c.look)...)
+	}
 }
 
 // auditDesktopConfig inventories Claude Desktop's
@@ -431,7 +481,7 @@ func (c *collector) auditDesktopConfig() {
 	}
 	c.addItem(path, "mcp", "desktop", true, "")
 	servers, _ := cfg["mcpServers"].(map[string]any)
-	c.add(analyzeMCPServers(path, "desktop", servers, c.look)...)
+	c.add(analyzeMCPServers(path, "desktop", "", servers, c.look)...)
 	c.add(scanSecrets(path, "desktop", data)...)
 }
 

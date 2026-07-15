@@ -15,9 +15,18 @@ import (
 // silently fails to start), entries with neither command nor url
 // (warning), and env values that embed a recognizable secret (critical).
 // Connectivity is deliberately not tested — the audit stays offline.
-func analyzeMCPServers(path, scope string, servers map[string]any, look func(string) (string, error)) []Finding {
+//
+// label distinguishes servers that share a file but belong to different
+// scopes within it — e.g. the per-project mcpServers blocks in
+// ~/.claude.json all live in one file but apply to different projects.
+// It is woven into each finding (empty label = no annotation).
+func analyzeMCPServers(path, scope, label string, servers map[string]any, look func(string) (string, error)) []Finding {
 	if len(servers) == 0 {
 		return nil
+	}
+	where := ""
+	if label != "" {
+		where = " (" + label + ")"
 	}
 	names := make([]string, 0, len(servers))
 	for name := range servers {
@@ -38,14 +47,14 @@ func analyzeMCPServers(path, scope string, servers map[string]any, look func(str
 		case command == "" && url == "":
 			out = append(out, Finding{
 				File: path, Scope: scope, Dimension: "mcp", Severity: SeverityWarning,
-				Issue: fmt.Sprintf("server %q has neither a command nor a url", name),
+				Issue: fmt.Sprintf("server %q%s has neither a command nor a url", name, where),
 				Fix:   "add a command (stdio) or url (http/sse), or remove the entry",
 			})
 		case command != "":
 			if missing := commandMissing(command, look); missing != "" {
 				out = append(out, Finding{
 					File: path, Scope: scope, Dimension: "mcp", Severity: SeverityWarning,
-					Issue: fmt.Sprintf("server %q: %s", name, missing),
+					Issue: fmt.Sprintf("server %q%s: %s", name, where, missing),
 					Fix:   "install the binary or fix the path — the server silently fails to start",
 				})
 			}
@@ -65,7 +74,7 @@ func analyzeMCPServers(path, scope string, servers map[string]any, look func(str
 			if kinds := redact.FindNames(v); len(kinds) > 0 {
 				out = append(out, Finding{
 					File: path, Scope: scope, Dimension: "mcp", Severity: SeverityCritical,
-					Issue: fmt.Sprintf("server %q env %s holds an inline secret (%s)", name, k, strings.Join(kinds, ", ")),
+					Issue: fmt.Sprintf("server %q%s env %s holds an inline secret (%s)", name, where, k, strings.Join(kinds, ", ")),
 					Fix:   "reference the secret via your shell env or a credential helper, and rotate it",
 				})
 			}

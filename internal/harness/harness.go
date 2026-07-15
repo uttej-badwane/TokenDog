@@ -100,7 +100,9 @@ func Run(opts Options) (*Report, error) {
 		c.auditProjectMCP(opts.ProjectRoot)
 	}
 
-	// Global MCP sources: ~/.claude.json and Claude Desktop's config.
+	// Global MCP sources: ~/.claude/mcp.json, ~/.claude.json (global +
+	// per-project), and Claude Desktop's config.
+	c.auditUserMCPJSON(opts.ClaudeHome)
 	c.auditClaudeJSON(opts.ClaudeJSON)
 	c.auditDesktopConfig()
 
