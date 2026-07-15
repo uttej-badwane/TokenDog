@@ -99,3 +99,34 @@ func TestHasSecret(t *testing.T) {
 		t.Error("HasSecret missed AWS key")
 	}
 }
+
+func TestRedactAnthropicKey(t *testing.T) {
+	in := "env ANTHROPIC_API_KEY=sk-ant-api03-aaaaaaaaaaaaaaaaaaaaaaaa done"
+	out, n := All(in)
+	if n != 1 {
+		t.Errorf("expected 1 redaction, got %d", n)
+	}
+	if strings.Contains(out, "sk-ant-") {
+		t.Errorf("anthropic key not redacted: %q", out)
+	}
+	if !strings.Contains(out, "[REDACTED-ANTHROPIC-KEY]") {
+		t.Errorf("placeholder missing: %q", out)
+	}
+	// Short sk-ant- prefixes in prose must NOT fire.
+	if _, n := All("the sk-ant- prefix marks Anthropic keys"); n != 0 {
+		t.Errorf("bare prefix should not redact")
+	}
+}
+
+func TestFindNames(t *testing.T) {
+	names := FindNames("key sk-ant-api03-aaaaaaaaaaaaaaaaaaaaaaaa and AKIAIOSFODNN7EXAMPLE")
+	if len(names) != 2 {
+		t.Fatalf("expected 2 pattern names, got %v", names)
+	}
+	if names[0] != "anthropic-api-key" || names[1] != "aws-access-key" {
+		t.Errorf("unexpected names: %v", names)
+	}
+	if got := FindNames("perfectly ordinary text"); got != nil {
+		t.Errorf("clean text should yield nil, got %v", got)
+	}
+}

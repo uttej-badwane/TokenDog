@@ -87,6 +87,47 @@ enum TDClient {
         }
     }
 
+    /// Runs `td harness --json` and decodes the audit. Synchronous; callers
+    /// run it off the main thread. Mirrors fetchReport.
+    static func fetchHarness() throws -> HarnessReport {
+        guard let path = resolvePath() else { throw Failure.notFound }
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: path)
+        proc.arguments = ["harness", "--json"]
+
+        let out = Pipe()
+        let err = Pipe()
+        proc.standardOutput = out
+        proc.standardError = err
+
+        try proc.run()
+        let outData = out.fileHandleForReading.readDataToEndOfFile()
+        let errData = err.fileHandleForReading.readDataToEndOfFile()
+        proc.waitUntilExit()
+
+        if proc.terminationStatus != 0 {
+            let stderr = String(data: errData, encoding: .utf8) ?? ""
+            throw Failure.ranButFailed(code: proc.terminationStatus, stderr: stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        do {
+            return try HarnessReport.decode(from: outData)
+        } catch {
+            throw Failure.badOutput(error.localizedDescription)
+        }
+    }
+
+    /// Opens the full Code Harness report in Terminal (`td harness`).
+    static func openHarnessReport() {
+        guard let path = resolvePath() else { return }
+        let script = "tell application \"Terminal\" to do script \"\(path) harness\"\n" +
+                     "tell application \"Terminal\" to activate"
+        if let appleScript = NSAppleScript(source: script) {
+            var errInfo: NSDictionary?
+            appleScript.executeAndReturnError(&errInfo)
+        }
+    }
+
     /// `which`-style PATH lookup without spawning a shell.
     private static func which(_ name: String) -> String? {
         let path = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"

@@ -51,6 +51,14 @@ type pattern struct {
 }
 
 var patterns = []pattern{
+	// Anthropic API keys: sk-ant- prefix + at least 16 token chars. The
+	// prefix is unique enough that false positives are effectively nil,
+	// and it's the secret TokenDog's audience is most likely to leak.
+	{
+		name:        "anthropic-api-key",
+		re:          regexp.MustCompile(`\bsk-ant-[A-Za-z0-9_-]{16,}`),
+		replacement: "[REDACTED-ANTHROPIC-KEY]",
+	},
 	// AWS keys: AKIA + 16 uppercase alphanumerics (access key) or ASIA
 	// (temporary). Must be word-boundary anchored so we don't match
 	// substrings of larger tokens.
@@ -103,6 +111,20 @@ func Names() []string {
 	out := make([]string, len(patterns))
 	for i, p := range patterns {
 		out[i] = p.name
+	}
+	return out
+}
+
+// FindNames returns the names of every pattern that matches s, in
+// pattern order. Empty when s is clean. Used by `td harness` to report
+// WHICH kind of secret sits in a config file without ever echoing the
+// value itself.
+func FindNames(s string) []string {
+	var out []string
+	for _, p := range patterns {
+		if p.re.MatchString(s) {
+			out = append(out, p.name)
+		}
 	}
 	return out
 }
