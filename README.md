@@ -48,6 +48,7 @@ Cost saved:         $0.19 (per-model rates, cl100k)
 | 🧪 **Proven quality** | `td eval` shows *deterministically* that no answer-bearing fact is ever dropped — numbers, not vibes |
 | 📊 **Honest measurement** | `td gain` prices real per-model/per-provider savings; `td replay` runs the counterfactual on **your** history |
 | 💵 **`/cost`-accurate spend** | `td statusline` renders your status line and captures Claude Code's own per-session cost, so `td spend` and the menu bar match `/cost` exactly |
+| 🩺 **Code Harness audit** | `td harness` inventories and audits your whole Claude Code setup — settings, permissions, hooks, CLAUDE.md, memory, agents, MCP — offline and read-only, ranked findings with fixes |
 | 🏢 **Fleet-ready** | opt-in aggregate reporting (no content leaves the box) + centrally-managed policy for platform teams |
 
 ## ⚡ Quick start
@@ -373,6 +374,39 @@ session's `cost.total_cost_usd` — the number Claude Code itself computes for
 Prefer your own status line? `td statusline --wrap '<your command>'` runs it with
 the same stdin while still capturing the cost.
 
+### `td harness` — audit your Claude Code setup
+
+```bash
+td harness                 # ranked findings: file · issue · severity · fix · scope
+td harness --json          # stable, versioned contract (drives the macOS menu bar)
+td harness --severity warning   # hide info-level noise
+td harness --inventory     # also list every config file it scanned
+td harness apply           # apply the auto-fixable findings, confirmed per fix, with backups
+```
+
+Inventories and audits your whole Claude Code configuration — `~/.claude`
+(settings, `CLAUDE.md` + `@imports`, agents, commands, skills, memory,
+keybindings), `~/.claude.json` MCP servers, the active project's `.claude/`
+and `.mcp.json`, and Claude Desktop's MCP config. Every check is
+**deterministic and fully offline — no LLM, no network** — and the audit is
+**strictly read-only**.
+
+It flags what actually bites you: `Bash(*)`-class permission rules that
+approve everything, duplicate and shadowed rules, hooks that pipe `curl` into
+a shell or point at a missing/non-executable script, broken `@imports`, a
+`MEMORY.md` index out of sync with its entry files, agents missing
+`name`/`description`/`tools`, MCP servers whose binary isn't on `PATH`, and
+API keys sitting inline in a config (reported by *kind* and *line* — never
+echoed). Findings are ranked critical → warning → info, each with a concrete
+fix.
+
+The handful of mechanical, reversible fixes — duplicate permission entries,
+hook scripts missing their exec bit — can be applied with `td harness apply`:
+each fix is confirmed individually (or `--yes`), and every touched file is
+copied to `~/.config/tokendog/harness-backups/<timestamp>/` first, with a
+`manifest.json` so a restore is a plain copy back. Everything else stays
+report-only.
+
 ### `td replay` — counterfactual: "what if I'd had td running all year?"
 
 ```bash
@@ -451,6 +485,7 @@ Exposes 6 tools to Claude Desktop: five read-only analytics queries (so you can 
 │   ├── cache/                 30s output cache for repeated commands (hook mode)
 │   ├── eval/                  offline quality harness + embedded corpus
 │   ├── filter/                ~25 per-tool compactors + universal Guard
+│   ├── harness/               Claude Code setup auditor (drives `td harness`)
 │   ├── hook/                  PreToolUse rewrite logic + bash chain parsing
 │   ├── mcpconfig/             Claude Desktop config management
 │   ├── policy/                centrally-managed fleet policy (dedup/reversible/threshold)
@@ -462,7 +497,7 @@ Exposes 6 tools to Claude Desktop: five read-only analytics queries (so you can 
 │   ├── stash/                 reversible-compression store (originals + preview)
 │   ├── tokenizer/             per-provider encodings (cl100k / o200k) via tiktoken-go
 │   └── transcript/            Claude session JSONL parser
-├── macos/TokenDogBar/         native menu-bar app (Swift; reads `td spend --json`)
+├── macos/TokenDogBar/         native menu-bar app (Swift; reads `td spend`/`td harness --json`)
 ├── tray/                       Windows/Linux system-tray app (Go module; cgo, isolated)
 └── scripts/install.sh         brew-less installer
 ```

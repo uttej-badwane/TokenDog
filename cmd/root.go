@@ -102,4 +102,5 @@ func init() {
 	rootCmd.AddCommand(gatewayCmd)
 	rootCmd.AddCommand(evalCmd)
 	rootCmd.AddCommand(fleetCmd)
+	rootCmd.AddCommand(harnessCmd)
 }

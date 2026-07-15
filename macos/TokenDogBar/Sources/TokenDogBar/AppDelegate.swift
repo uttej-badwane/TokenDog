@@ -13,6 +13,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastReport: SpendReport?
     private var lastError: String?
 
+    // Harness is fetched alongside spend but tracked separately: a harness
+    // failure (e.g. an older `td` without the command) must never blank the
+    // spend UI, so it renders nothing rather than surfacing an error row.
+    private var lastHarness: HarnessReport?
+
     private let refreshInterval: TimeInterval = 60
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -46,16 +51,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func refresh() {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
+            // Harness is best-effort and independent of spend: capture it
+            // (or nil on any failure) without disturbing the spend result.
+            let harness = try? TDClient.fetchHarness()
             do {
                 let report = try TDClient.fetchReport()
                 DispatchQueue.main.async {
                     self.lastReport = report
                     self.lastError = nil
+                    self.lastHarness = harness
                     self.rebuildMenu()
                 }
             } catch {
                 DispatchQueue.main.async {
                     self.lastError = "\(error)"
+                    self.lastHarness = harness
                     self.rebuildMenu()
                 }
             }
@@ -78,6 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 addInfo("No Claude usage logs found", "")
                 addFootnote("Looked in ~/.claude/projects")
             }
+            buildHarnessSection()
             menu.addItem(.separator())
             addFootnote("Updated \(Ago.string(r.generatedAt))  ·  td \(r.tdVersion)")
         } else if let err = lastError {
@@ -92,6 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         addAction("Refresh now", #selector(refresh), key: "r")
         addAction("Open full report…", #selector(openReport), key: "o")
+        addAction("Open Code Harness…", #selector(openHarness), key: "h")
 
         let login = NSMenuItem(title: "Launch at login", action: #selector(toggleLogin), keyEquivalent: "")
         login.target = self
@@ -150,6 +162,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         addInfo("Saved all-time", Money.micro(r.saved.lifetime))
         if r.sharePct > 0 {
             addInfo("Share of bill", String(format: "%.1f%%", r.sharePct))
+        }
+    }
+
+    /// Code Harness summary: a health line plus the top few findings from
+    /// `td harness`. Renders nothing when the installed `td` is too old to
+    /// provide the command (lastHarness stays nil) so the section simply
+    /// disappears rather than showing an error.
+    private func buildHarnessSection() {
+        guard let h = lastHarness else { return }
+        menu.addItem(.separator())
+        addHeader("Code Harness")
+
+        if h.isClean {
+            addStatus("Setup looks healthy", warn: false)
+        } else {
+            addStatus(h.headline, warn: h.summary.critical > 0)
+            // Findings arrive severity-sorted from td; show the top few.
+            for f in h.findings.prefix(3) {
+                addInfo(f.shortFile, f.glyph)
+                addFootnote(f.issue)
+            }
+            if h.summary.autoFixable > 0 {
+                addFootnote("\(h.summary.autoFixable) auto-fixable · run `td harness apply`")
+            }
         }
     }
 
@@ -244,6 +280,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Actions
 
     @objc private func openReport() { TDClient.openFullReport() }
+
+    @objc private func openHarness() { TDClient.openHarnessReport() }
 
     @objc private func toggleLogin() {
         LoginItem.toggle()
