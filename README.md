@@ -386,19 +386,21 @@ td harness apply           # apply the auto-fixable findings, confirmed per fix,
 
 Inventories and audits your whole Claude Code configuration — `~/.claude`
 (settings, `CLAUDE.md` + `@imports`, agents, commands, skills, memory,
-keybindings), `~/.claude.json` MCP servers, the active project's `.claude/`
-and `.mcp.json`, and Claude Desktop's MCP config. Every check is
-**deterministic and fully offline — no LLM, no network** — and the audit is
-**strictly read-only**.
+keybindings), `~/.claude/mcp.json` and `~/.claude.json` MCP servers (global
+**and** per-project), installed plugins under `plugins/`, the active
+project's `.claude/` and `.mcp.json`, and Claude Desktop's MCP config. Every
+check is **deterministic and fully offline — no LLM, no network** — and the
+audit is **strictly read-only**.
 
 It flags what actually bites you: `Bash(*)`-class permission rules that
 approve everything, duplicate and shadowed rules, hooks that pipe `curl` into
 a shell or point at a missing/non-executable script, broken `@imports`, a
 `MEMORY.md` index out of sync with its entry files, agents missing
-`name`/`description`/`tools`, MCP servers whose binary isn't on `PATH`, and
-API keys sitting inline in a config (reported by *kind* and *line* — never
-echoed). Findings are ranked critical → warning → info, each with a concrete
-fix.
+`name`/`description`/`tools`, MCP servers whose binary isn't on `PATH`,
+plugins that are enabled but not installed or that bundle an unsafe hook or a
+leaky MCP server, and API keys sitting inline in a config (reported by *kind*
+and *line* — never echoed). Findings are ranked critical → warning → info,
+each with a concrete fix.
 
 The handful of mechanical, reversible fixes — duplicate permission entries,
 hook scripts missing their exec bit — can be applied with `td harness apply`:
