@@ -92,6 +92,7 @@ func Run(opts Options) (*Report, error) {
 	userSettings := c.auditScope("user", opts.ClaudeHome, opts.ClaudeHome)
 	c.auditKeybindings(opts.ClaudeHome)
 	c.auditMemoryDirs(opts.ClaudeHome)
+	c.auditPlugins(opts.ClaudeHome, enabledPluginKeys(userSettings))
 
 	// Project scope: <root>/.claude plus root-level CLAUDE.md and .mcp.json.
 	var projSettings map[string]any
