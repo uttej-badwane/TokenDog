@@ -108,3 +108,17 @@ func TestAnalyzeSettingsMap(t *testing.T) {
 		t.Errorf("typo=%v deprecated=%v findings=%+v", typo, deprecated, findings)
 	}
 }
+
+// TestKnownSettingsKeysNotFlagged guards against the regression where a
+// healthy, current config gets flagged: every key a real Claude Code
+// install writes must be recognized. These are the keys that were
+// false-flagged in v0.18.0.
+func TestKnownSettingsKeysNotFlagged(t *testing.T) {
+	cfg := map[string]any{}
+	for _, k := range []string{"agentPushNotifEnabled", "effortLevel", "theme", "tui", "verbose", "messageIdleNotifThresholdMs"} {
+		cfg[k] = "x"
+	}
+	if findings := analyzeSettingsMap("/s.json", "user", cfg); len(findings) != 0 {
+		t.Errorf("valid keys should not be flagged, got %+v", findings)
+	}
+}
