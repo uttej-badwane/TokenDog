@@ -53,7 +53,7 @@ func TestAnalyzeMCPServers(t *testing.T) {
 			"env":     map[string]any{"API_KEY": fakeAnthropicKey},
 		},
 	}
-	findings := analyzeMCPServers("/.mcp.json", "project", servers, fakeLookPath("present-bin"))
+	findings := analyzeMCPServers("/.mcp.json", "project", "", servers, fakeLookPath("present-bin"))
 
 	var missing, malformed, secret int
 	for _, f := range findings {
