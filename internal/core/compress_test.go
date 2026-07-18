@@ -115,3 +115,62 @@ func TestCompressEmptyConversation(t *testing.T) {
 		t.Error("empty conversation should yield nil savings")
 	}
 }
+
+// HTML reaching the reversible pass must be handed to the prose sidecar as
+// extracted visible text, not raw markup (which looksLikeProse would reject).
+func TestApplyReversibleHTMLFeedsCleanTextToProse(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	html := "<!doctype html><html><head><style>.x{color:red}</style>" +
+		"<script>track()</script></head><body><h1>Refund status</h1>" +
+		"<p>The customer was made whole earlier via a chargeback. A follow-up " +
+		"credit was logged but does not match the processor timeline.</p></body></html>"
+
+	var seen string
+	prose := func(text string) (string, bool) {
+		seen = text // capture exactly what the sidecar received
+		return "SUMMARY", true
+	}
+
+	out, ok := applyReversible("curl https://x", html, 1, prose)
+	if !ok {
+		t.Fatal("expected reversible pass to fire")
+	}
+	if !strings.HasPrefix(out, "SUMMARY") || !strings.Contains(out, "td:STASHED") {
+		t.Errorf("expected prose output + retrieval marker, got %q", out)
+	}
+	if strings.ContainsAny(seen, "<>") || strings.Contains(seen, "track()") || strings.Contains(seen, "color:red") {
+		t.Errorf("prose input not cleaned of markup/script/style: %q", seen)
+	}
+	if !strings.Contains(seen, "Refund status") || !strings.Contains(seen, "chargeback") {
+		t.Errorf("prose input lost visible text: %q", seen)
+	}
+}
+
+// Without a prose sidecar, a short cleaned-HTML preview is returned verbatim
+// (too few lines to head/tail elide). Because that text is a lossy reduction,
+// it must still carry a retrieval marker or the dropped markup is silently
+// unrecoverable.
+func TestApplyReversibleHTMLPreviewCarriesMarker(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	// Big enough (noise-heavy) that cleaned text + marker still beats the raw.
+	html := "<html><head><style>" + strings.Repeat("a{color:red}", 200) + "</style>" +
+		"<script>" + strings.Repeat("doStuff();", 200) + "</script></head>" +
+		"<body><p>Short visible sentence.</p></body></html>"
+
+	out, ok := applyReversible("curl https://x", html, 1, nil)
+	if !ok {
+		t.Fatal("expected reversible pass to fire")
+	}
+	if !strings.Contains(out, "td:STASHED") {
+		t.Errorf("lossy HTML reduction returned without a recovery marker: %q", out)
+	}
+	if strings.Contains(out, "doStuff") || strings.Contains(out, "color:red") {
+		t.Errorf("script/style noise survived: %q", out)
+	}
+	if !strings.Contains(out, "Short visible sentence.") {
+		t.Errorf("visible text lost: %q", out)
+	}
+	if len(out) >= len(html) {
+		t.Errorf("no savings: %d -> %d", len(html), len(out))
+	}
+}

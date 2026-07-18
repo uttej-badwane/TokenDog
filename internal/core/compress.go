@@ -160,6 +160,17 @@ func applyReversible(command, content string, minBytes int, prose ProseFunc) (st
 		return "", false
 	}
 
+	// Everything downstream — prose compression and the head/tail preview
+	// fallback — works far better on visible text than on raw HTML: markup is
+	// symbol-dense, so it never looks like prose (looksLikeProse rejects the
+	// leading '<') and its head/tail is a wall of tag soup. Extract the text
+	// once and drive both paths from it. The full original HTML is stashed
+	// above (recoverable via td_retrieve), so this stays quality-neutral.
+	base := content
+	if filter.LooksLikeHTML(content) {
+		base = filter.HTMLToText(content)
+	}
+
 	// Prose-aware preview: for natural-language content, a learned compressor
 	// keeps high-signal tokens throughout instead of crude head/tail
 	// truncation. It's lossy, but the full original is stashed above
@@ -167,8 +178,8 @@ func applyReversible(command, content string, minBytes int, prose ProseFunc) (st
 	// recover-rate measure the eval harness checks. Only runs when a prose
 	// compressor was injected AND the content actually looks like prose
 	// (never on logs/JSON/code — see looksLikeProse).
-	if prose != nil && looksLikeProse(content) {
-		if compressed, ok := prose(content); ok {
+	if prose != nil && looksLikeProse(base) {
+		if compressed, ok := prose(base); ok {
 			out := compressed + "\n" + stash.Marker(id, len(content))
 			if len(out) < len(content) {
 				return out, true
@@ -176,7 +187,15 @@ func applyReversible(command, content string, minBytes int, prose ProseFunc) (st
 		}
 	}
 
-	preview := stash.Preview(id, content, previewHeadLines, previewTailLines)
+	preview := stash.Preview(id, base, previewHeadLines, previewTailLines)
+	// stash.Preview returns short content verbatim, embedding no marker. When
+	// base is a lossy HTML reduction, that verbatim text must still carry a
+	// retrieval marker or the dropped markup would be silently unrecoverable —
+	// append one. (For non-HTML, base == content and the verbatim return is
+	// itself lossless, so no marker is needed.)
+	if base != content && preview == base {
+		preview = base + "\n" + stash.Marker(id, len(content))
+	}
 	if len(preview) >= len(content) {
 		return "", false
 	}
