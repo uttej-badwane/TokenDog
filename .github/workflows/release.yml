@@ -23,7 +23,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           # Match go.mod (go 1.23.0). Building release binaries with the
           # module's declared toolchain also keeps stdlib security fixes current.
