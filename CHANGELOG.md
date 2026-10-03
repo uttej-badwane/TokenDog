@@ -10,6 +10,7 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - **`td gateway` uses `ReverseProxy.Rewrite` instead of the deprecated `Director`.** Hop-by-hop headers are now stripped before TokenDog's rewrite runs, so a client-sent `Connection` header can no longer remove headers the gateway sets. The gateway also stops adding `X-Forwarded-For: 127.0.0.1` to upstream requests.
+- **Linux cert-install error message no longer treats the cert path as a format string.** A path containing `%` would have produced a garbled message.
 
 ## [0.17.1] - 2026-07-02
 
