@@ -54,7 +54,7 @@ Every filter MUST produce output ≤ input bytes, preserving every meaningful by
 
 ## Modules and non-Go components
 
-The root Go module is `tokendog` (Go 1.23; `main.go` just calls `cmd.Execute()`, all subcommands live in `cmd/`). Two components are **separate modules/toolchains**, not part of `go test ./...`:
+The root Go module is `tokendog` (Go version per `go.mod`; `main.go` just calls `cmd.Execute()`, all subcommands live in `cmd/`). Two components are **separate modules/toolchains**, not part of `go test ./...`:
 
 - `tray/` — Windows/Linux system-tray app, its own Go module (uses cgo, intentionally isolated).
 - `macos/TokenDogBar/` — native Swift menu-bar app; reads `td spend` / `td harness --json`.

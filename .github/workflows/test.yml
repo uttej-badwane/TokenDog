@@ -102,7 +102,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: govulncheck
-        # Pin to a version that builds with the module's Go (1.23). govulncheck
+        # Pin to a version that builds with the module's Go (go.mod; 1.23+). govulncheck
         # @latest now requires Go >= 1.25, which would fail the `go install`
         # before the scan even runs.
         run: |
