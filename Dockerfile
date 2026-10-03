@@ -7,7 +7,7 @@
 # Run:   docker run --rm tokendog --version
 # Mount your Claude transcripts: docker run --rm -v ~/.claude:/root/.claude tokendog replay
 
-FROM golang:1.22-alpine AS build
+FROM golang:1.27-alpine AS build
 WORKDIR /src
 # Cache deps separately from sources so source-only changes don't bust the
 # layer.
@@ -20,7 +20,7 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w -X tokendog/cmd.Version=docker" -o /o
 # Runtime: minimal, but include the tools td actually wraps so `td git ...`
 # works inside the container. If you don't need them, build FROM scratch
 # and copy only the binary.
-FROM alpine:3.20
+FROM alpine:3.24
 RUN apk add --no-cache git curl jq ca-certificates
 COPY --from=build /out/td /usr/local/bin/td
 RUN ln -s /usr/local/bin/td /usr/local/bin/tokendog

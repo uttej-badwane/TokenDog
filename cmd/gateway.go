@@ -68,13 +68,14 @@ func runGateway(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("--upstream must be an absolute URL like https://api.anthropic.com")
 	}
 
-	rp := httputil.NewSingleHostReverseProxy(upstream)
-	origDirector := rp.Director
-	rp.Director = func(r *http.Request) {
-		origDirector(r)
-		// Make the request look like it originated for the upstream host so
-		// TLS SNI and Host header line up.
-		r.Host = upstream.Host
+	// Rewrite (not the deprecated Director) so hop-by-hop headers are stripped
+	// before our rewrite runs and a client can't use Connection to drop
+	// headers we set. SetURL also clears Host, so the outbound Host header
+	// matches the upstream and TLS SNI lines up.
+	rp := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(upstream)
+		},
 	}
 
 	handler := func(w http.ResponseWriter, r *http.Request) {

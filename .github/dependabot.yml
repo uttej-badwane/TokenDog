@@ -11,6 +11,24 @@ updates:
       go-dependencies:
         update-types: [minor, patch]
 
+  # The tray app is its own Go module (cgo, isolated from the root build), so
+  # it needs its own entry or its dependencies never get bumped.
+  - package-ecosystem: gomod
+    directory: "/tray"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      tray-dependencies:
+        update-types: [minor, patch]
+
+  # Keep the Dockerfile's golang/alpine base images current.
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
   # Keep the GitHub Actions used in workflows patched (pinned action versions
   # drift and accrue their own advisories).
   - package-ecosystem: github-actions
