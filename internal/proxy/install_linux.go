@@ -39,10 +39,10 @@ func InstallCert() (string, error) {
 	}
 
 	// Neither tool present or both failed — return instructions.
-	return certPath, fmt.Errorf("could not auto-install cert (sudo required); install manually:\n" +
-		"  Debian/Ubuntu: sudo cp " + certPath + " /usr/local/share/ca-certificates/tokendog.crt && sudo update-ca-certificates\n" +
-		"  Fedora/RHEL:   sudo cp " + certPath + " /etc/pki/ca-trust/source/anchors/ && sudo update-ca-trust\n" +
-		"  Arch:          sudo trust anchor --store " + certPath)
+	return certPath, fmt.Errorf("could not auto-install cert (sudo required); install manually:\n"+
+		"  Debian/Ubuntu: sudo cp %[1]s /usr/local/share/ca-certificates/tokendog.crt && sudo update-ca-certificates\n"+
+		"  Fedora/RHEL:   sudo cp %[1]s /etc/pki/ca-trust/source/anchors/ && sudo update-ca-trust\n"+
+		"  Arch:          sudo trust anchor --store %[1]s", certPath)
 }
 
 func installCertDebian(certPath string) (string, error) {
