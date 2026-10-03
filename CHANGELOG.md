@@ -6,6 +6,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- **Homebrew: TokenDog now ships as a cask instead of a formula.** goreleaser deprecated its `brews` publisher, so releases now publish `Casks/tokendog.rb` to the tap via `homebrew_casks`. `brew install uttej-badwane/tokendog/tokendog` works as before on macOS and Linux, with the same `td`/`tokendog` commands, shell completions and caveats. Existing formula installs migrate to the cask automatically on `brew update` if the tap is trusted. Otherwise Homebrew prints the `brew trust --cask` / `brew install --cask` commands to run. The binaries are unsigned, so the cask clears macOS quarantine before first run to avoid Gatekeeper's "td Not Opened" dialog.
+
+### Changed
 - **Built with Go 1.27; all dependencies on their latest releases.** The minimum Go is now 1.27 (was 1.23, which no longer gets security fixes), for both the root module and `tray/`. Updated goproxy 1.8.5 → 1.9.2, `golang.org/x/net` 0.43 → 0.59, `golang.org/x/text` 0.28 → 0.42 and the remaining indirect dependencies. CI and release builds now install the newest patch of go.mod's Go release line, so release binaries include every stdlib security fix. The Docker image builds on `golang:1.27-alpine` / `alpine:3.24` (was `golang:1.22`, too old to build the module).
 
 ### Fixed

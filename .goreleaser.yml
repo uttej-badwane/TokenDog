@@ -40,22 +40,39 @@ changelog:
       - "^test:"
       - "^chore:"
 
-brews:
+homebrew_casks:
   - name: tokendog
     repository:
       owner: uttej-badwane
       name: homebrew-tokendog
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: "https://github.com/uttej-badwane/TokenDog"
-    description: "Token-optimized CLI proxy for AI coding assistants — saves 60-90% of tokens on common dev operations"
-    license: "MIT"
-    install: |
-      bin.install "td"
-      bin.install_symlink "td" => "tokendog"
-      generate_completions_from_executable(bin/"td", "completion")
-    test: |
-      system "#{bin}/td --version"
-      system "#{bin}/tokendog --version"
+    # Casks cap `desc` below 80 characters (brew style Cask/Desc).
+    description: "Token-optimized CLI proxy for AI coding assistants"
+    binaries:
+      - td
+    generate_completions_from_executable:
+      args: ["completion"]
+    # Stanzas goreleaser has no option for, emitted verbatim into the cask:
+    #
+    # - `tokendog` alias: the formula symlinked it; goreleaser's `binaries`
+    #   can't set a target, so use Homebrew's native stanza (brew removes it
+    #   on uninstall).
+    # - Quarantine: casks (unlike formulae) are quarantined on download, and
+    #   the binaries aren't signed or notarized, so Gatekeeper kills `td` with
+    #   a "Not Opened" dialog. Clear the flag in preflight, because generating
+    #   completions runs `td` before postflight (so goreleaser's documented
+    #   `hooks.post.install` is too late). `preflight_steps` replaces the
+    #   `preflight` block that Homebrew 7 deprecated; goreleaser's `hooks`
+    #   still emit the old form.
+    custom_block: |
+      binary "td", target: "tokendog"
+
+      preflight_steps do
+        on_macos do
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "td"], chdir: ".", writable_paths: ["td"]
+        end
+      end
     caveats: |
       ████████╗ ██████╗ ██╗  ██╗███████╗███╗   ██╗██████╗  ██████╗  ██████╗
       ╚══██╔══╝██╔═══██╗██║ ██╔╝██╔════╝████╗  ██║██╔══██╗██╔═══██╗██╔════╝
