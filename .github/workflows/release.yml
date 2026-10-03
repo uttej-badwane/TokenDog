@@ -23,11 +23,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Build with the newest patch of go.mod's release line (e.g. 1.27.x),
+      # not the exact `go 1.27.0` minimum, so release binaries carry every
+      # stdlib security fix. Mirrors the go-version job in test.yml.
+      - id: gomod
+        run: |
+          v=$(sed -nE 's/^go ([0-9]+\.[0-9]+).*/\1/p' go.mod)
+          test -n "$v" || { echo "::error::no go directive in go.mod"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-go@v7
         with:
-          # Read the toolchain from go.mod's `go` directive so release builds
-          # match what the module declares.
-          go-version-file: go.mod
+          go-version: ${{ steps.gomod.outputs.version }}
+          check-latest: true
           cache: true
 
       - uses: goreleaser/goreleaser-action@v7
