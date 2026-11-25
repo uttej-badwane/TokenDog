@@ -1,6 +1,9 @@
 package hook
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+)
 
 type ClaudeHookInput struct {
 	SessionID      string         `json:"session_id"`
@@ -208,41 +211,48 @@ func rewriteCommand(cmd string, depth int) string {
 		return cmd
 	}
 
-	parts := strings.Fields(cmd)
-	if len(parts) == 0 {
-		return cmd
+	// Splice `td <sub>` over the binary and keep every other byte as it was.
+	// Re-joining strings.Fields with single spaces would also collapse the
+	// whitespace inside quoted arguments: the blank line in a multi-line
+	// `git commit -m`, or the pattern in `grep "a  b"`.
+	pos := 0
+	for {
+		start, end := nextField(cmd, pos)
+		if start < 0 {
+			return cmd // empty, or env-var assignments with no command
+		}
+		// Skip leading env-var assignments (e.g. `AWS_PROFILE=foo aws ec2 ...`)
+		// so the hook still recognizes the underlying binary.
+		if IsEnvAssignment(cmd[start:end]) {
+			pos = end
+			continue
+		}
+		bin := cmd[start:end]
+		if idx := strings.LastIndex(bin, "/"); idx >= 0 {
+			bin = bin[idx+1:]
+		}
+		sub, ok := Supported[bin]
+		if !ok {
+			return cmd
+		}
+		return cmd[:start] + "td " + sub + cmd[end:]
 	}
+}
 
-	// Skip leading env-var assignments (e.g. `AWS_PROFILE=foo aws ec2 ...`)
-	// so the hook still recognizes the underlying binary.
-	binIdx := 0
-	for binIdx < len(parts) && IsEnvAssignment(parts[binIdx]) {
-		binIdx++
+// nextField returns the byte span of the first whitespace-separated field in
+// s at or after from, using the same whitespace rule as strings.Fields. start
+// is -1 when no field remains.
+func nextField(s string, from int) (start, end int) {
+	i := strings.IndexFunc(s[from:], func(r rune) bool { return !unicode.IsSpace(r) })
+	if i < 0 {
+		return -1, -1
 	}
-	if binIdx >= len(parts) {
-		return cmd
+	start = from + i
+	j := strings.IndexFunc(s[start:], unicode.IsSpace)
+	if j < 0 {
+		return start, len(s)
 	}
-
-	bin := parts[binIdx]
-	if idx := strings.LastIndex(bin, "/"); idx >= 0 {
-		bin = bin[idx+1:]
-	}
-	sub, ok := Supported[bin]
-	if !ok {
-		return cmd
-	}
-
-	prefix := strings.Join(parts[:binIdx], " ")
-	rest := strings.Join(parts[binIdx+1:], " ")
-
-	out := "td " + sub
-	if prefix != "" {
-		out = prefix + " " + out
-	}
-	if rest != "" {
-		out = out + " " + rest
-	}
-	return out
+	return start, start + j
 }
 
 // reassembleChain stitches segments back together with their original
