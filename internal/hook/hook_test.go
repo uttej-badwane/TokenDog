@@ -170,6 +170,16 @@ func TestRewriteCommand(t *testing.T) {
 		// the lone `&` doesn't trigger chain splitting (only `&&` does).
 		{"background single &", "ls /tmp &", "td ls /tmp &"},
 		{"pipe single |", "git log | head -5", "td git log | head -5"},
+		// Everything after the binary is passed through byte for byte. The
+		// rewrite used to re-join fields with single spaces, which collapsed
+		// a multi-line `git commit -m` into one subject line and changed the
+		// pattern a quoted grep searched for.
+		{"multi-line commit message", "git commit -m \"subject\n\nbody line\"", "td git commit -m \"subject\n\nbody line\""},
+		{"repeated spaces in quotes", `grep "a  b" file`, `td grep "a  b" file`},
+		{"tab in quotes", "grep \"a\tb\" file", "td grep \"a\tb\" file"},
+		{"newline separates commands", "git status\nls -la", "td git status\nls -la"},
+		{"env-var prefix keeps spacing", "FOO=1  git  log", "FOO=1  td git  log"},
+		{"chain keeps segment whitespace", "cd /tmp && git commit -m \"a\n\nb\"", "cd /tmp && td git commit -m \"a\n\nb\""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -5,6 +5,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **The Claude Code hook no longer changes whitespace in rewritten commands.** The rewrite rebuilt each command from its whitespace-separated fields joined by single spaces, even inside quotes. A multi-line `git commit -m` arrived as one long subject line, `grep "a  b"` searched for `a b`, and two commands on separate lines ran as one (`git status` then `ls -la` became `td git status ls -la`). The hook now replaces only the binary with `td <tool>` and passes every other byte through unchanged.
+
 ## [0.20.0] - 2026-10-03
 
 ### Added
